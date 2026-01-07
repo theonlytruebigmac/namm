@@ -119,6 +119,7 @@ export function useConnections() {
 export function useMultiMQTT() {
   const queryClient = useQueryClient();
   const managerRef = useRef<ReturnType<typeof getMultiMQTTManager> | null>(null);
+  const serverConnectionsRef = useRef<Set<string>>(new Set());
   const [connectionStates, setConnectionStates] = useState<Map<string, ConnectionState>>(
     new Map()
   );
@@ -135,20 +136,50 @@ export function useMultiMQTT() {
     const mqttConnections = getConnectionsByType<MQTTConnectionConfig>("mqtt");
 
     for (const config of mqttConnections) {
-      manager.addConnection(config);
+      // Only add WebSocket connections to browser manager
+      const isWebSocket = config.brokerUrl.startsWith("ws://") || config.brokerUrl.startsWith("wss://");
+      if (isWebSocket) {
+        manager.addConnection(config);
+      }
     }
 
-    // Update states periodically
-    const updateStates = () => {
+    // Update states periodically (including server-side connections)
+    const updateStates = async () => {
       const states = new Map<string, ConnectionState>();
+
+      // Get browser-side connection states
       for (const state of manager.getAllConnectionStates()) {
         states.set(state.id, state);
       }
+
+      // Fetch server-side connection states
+      try {
+        const response = await fetch("/api/mqtt/connections");
+        if (response.ok) {
+          const data = await response.json();
+          for (const conn of data.connections || []) {
+            serverConnectionsRef.current.add(conn.id);
+            states.set(conn.id, {
+              id: conn.id,
+              status: conn.status,
+              error: conn.error,
+              messagesReceived: conn.messagesReceived,
+              messagesSent: 0,
+              bytesReceived: 0,
+              bytesSent: 0,
+              connectedAt: conn.connectedAt,
+            });
+          }
+        }
+      } catch {
+        // Server may not be running
+      }
+
       setConnectionStates(states);
     };
 
     updateStates();
-    const interval = setInterval(updateStates, 1000);
+    const interval = setInterval(updateStates, 2000);
 
     // Set up event handlers for data updates
     const unsubMessage = manager.on<Message>("mqtt.message", (connId, message) => {
@@ -221,11 +252,65 @@ export function useMultiMQTT() {
     };
   }, []);
 
-  const connect = useCallback((connectionId: string) => {
+  const connect = useCallback(async (connectionId: string) => {
+    // Get the connection config to check protocol
+    const mqttConfigs = getConnectionsByType<MQTTConnectionConfig>("mqtt");
+    const config = mqttConfigs.find(c => c.id === connectionId);
+
+    if (config) {
+      // Check if this needs server-side connection (native MQTT)
+      const isNativeMQTT = config.brokerUrl.startsWith("mqtt://") || config.brokerUrl.startsWith("mqtts://");
+
+      if (isNativeMQTT) {
+        // Use server-side MQTT connection
+        console.log(`[MQTT] Using server-side connection for ${config.name} (native MQTT)`);
+        try {
+          const response = await fetch("/api/mqtt/connections", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id: config.id,
+              name: config.name,
+              broker: config.brokerUrl,
+              username: config.username,
+              password: config.password,
+              topics: config.subscriptions.filter(s => s.enabled).map(s => s.topic),
+            }),
+          });
+
+          if (!response.ok) {
+            const error = await response.json();
+            console.error(`[MQTT] Server connection failed:`, error);
+          } else {
+            serverConnectionsRef.current.add(connectionId);
+            console.log(`[MQTT] Server connection initiated for ${config.name}`);
+          }
+        } catch (error) {
+          console.error(`[MQTT] Failed to create server connection:`, error);
+        }
+        return;
+      }
+    }
+
+    // Use browser-side WebSocket connection
     managerRef.current?.connect(connectionId);
   }, []);
 
-  const disconnect = useCallback((connectionId: string) => {
+  const disconnect = useCallback(async (connectionId: string) => {
+    // Check if this is a server-side connection
+    if (serverConnectionsRef.current.has(connectionId)) {
+      try {
+        await fetch(`/api/mqtt/connections?id=${connectionId}`, {
+          method: "DELETE",
+        });
+        serverConnectionsRef.current.delete(connectionId);
+        console.log(`[MQTT] Server connection closed`);
+      } catch (error) {
+        console.error(`[MQTT] Failed to close server connection:`, error);
+      }
+      return;
+    }
+
     managerRef.current?.disconnect(connectionId);
   }, []);
 

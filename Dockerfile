@@ -56,22 +56,22 @@ ENV PORT=3000
 RUN groupadd --system --gid 1001 nodejs && \
     useradd --system --uid 1001 --gid nodejs --groups dialout --create-home nextjs
 
-# Install pm2 globally
-RUN npm install -g pm2
+# Install pm2 and tsx globally
+RUN npm install -g pm2 tsx
 
 # Copy built application
-COPY --from=builder /app/public ./public
-COPY --from=builder /app/.next/standalone ./
-COPY --from=builder /app/.next/static ./.next/static
+COPY --from=builder --chown=nextjs:nodejs /app/public ./public
+COPY --from=builder --chown=nextjs:nodejs /app/.next ./.next
+COPY --from=builder --chown=nextjs:nodejs /app/node_modules ./node_modules
 
-# Copy native modules (serialport bindings)
-COPY --from=builder /app/node_modules/@serialport ./node_modules/@serialport
-COPY --from=builder /app/node_modules/serialport ./node_modules/serialport
+# Copy source files for custom server (uses tsx for TypeScript)
+COPY --from=builder --chown=nextjs:nodejs /app/server.ts ./server.ts
+COPY --from=builder --chown=nextjs:nodejs /app/src ./src
+COPY --from=builder --chown=nextjs:nodejs /app/tsconfig.json ./tsconfig.json
 
-# Copy server and config files
-COPY --from=builder /app/server.ts ./server.ts
-COPY --from=builder /app/ecosystem.config.cjs ./ecosystem.config.cjs
-COPY --from=builder /app/package.json ./package.json
+# Copy config files
+COPY --from=builder --chown=nextjs:nodejs /app/ecosystem.config.cjs ./ecosystem.config.cjs
+COPY --from=builder --chown=nextjs:nodejs /app/package.json ./package.json
 
 # Create directories for data and logs
 RUN mkdir -p /app/data /app/logs && \

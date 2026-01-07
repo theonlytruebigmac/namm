@@ -2,8 +2,8 @@
 module.exports = {
   apps: [{
     name: 'namm-mqtt',
-    script: './server.js',
-    interpreter: 'node',
+    script: './server.ts',
+    interpreter: 'tsx',
     instances: 1,
     exec_mode: 'fork',
     watch: false,

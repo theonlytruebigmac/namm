@@ -6,7 +6,7 @@
 
 import type Database from 'better-sqlite3';
 
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 export function initializeSchema(db: Database.Database): void {
   // Check if already initialized
@@ -187,6 +187,49 @@ function createTables(db: Database.Database): void {
       FOREIGN KEY (to_id) REFERENCES nodes(id) ON DELETE CASCADE
     )
   `);
+
+  // Waypoints table - stores map waypoints/pins
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS waypoints (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL DEFAULT '',
+      description TEXT,
+      latitude REAL NOT NULL,
+      longitude REAL NOT NULL,
+      icon INTEGER,
+      expire INTEGER,
+      locked_to INTEGER,
+      from_id TEXT NOT NULL,
+      timestamp INTEGER NOT NULL,
+      FOREIGN KEY (from_id) REFERENCES nodes(id) ON DELETE CASCADE
+    )
+  `);
+
+  // Neighbors table - stores neighbor relationships between nodes
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS neighbors (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      node_id TEXT NOT NULL,
+      neighbor_id TEXT NOT NULL,
+      snr REAL,
+      timestamp INTEGER NOT NULL,
+      UNIQUE(node_id, neighbor_id),
+      FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE CASCADE
+    )
+  `);
+
+  // Routing table - stores delivery confirmations and routing errors
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS routing (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      from_id TEXT NOT NULL,
+      to_id TEXT NOT NULL,
+      packet_id INTEGER,
+      error_reason INTEGER DEFAULT 0,
+      timestamp INTEGER NOT NULL,
+      FOREIGN KEY (from_id) REFERENCES nodes(id) ON DELETE CASCADE
+    )
+  `);
 }
 
 function createIndexes(db: Database.Database): void {
@@ -231,6 +274,27 @@ function createIndexes(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_traceroutes_timestamp ON traceroutes(timestamp DESC);
     CREATE INDEX IF NOT EXISTS idx_traceroutes_from ON traceroutes(from_id, timestamp DESC);
     CREATE INDEX IF NOT EXISTS idx_traceroutes_to ON traceroutes(to_id, timestamp DESC);
+  `);
+
+  // Waypoint indexes
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_waypoints_timestamp ON waypoints(timestamp DESC);
+    CREATE INDEX IF NOT EXISTS idx_waypoints_from ON waypoints(from_id);
+    CREATE INDEX IF NOT EXISTS idx_waypoints_location ON waypoints(latitude, longitude);
+  `);
+
+  // Neighbor indexes
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_neighbors_node ON neighbors(node_id);
+    CREATE INDEX IF NOT EXISTS idx_neighbors_neighbor ON neighbors(neighbor_id);
+    CREATE INDEX IF NOT EXISTS idx_neighbors_timestamp ON neighbors(timestamp DESC);
+  `);
+
+  // Routing indexes
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_routing_timestamp ON routing(timestamp DESC);
+    CREATE INDEX IF NOT EXISTS idx_routing_from ON routing(from_id);
+    CREATE INDEX IF NOT EXISTS idx_routing_to ON routing(to_id);
   `);
 }
 
@@ -331,6 +395,67 @@ function migrate(db: Database.Database, fromVersion: number, toVersion: number):
       CREATE INDEX IF NOT EXISTS idx_traceroutes_timestamp ON traceroutes(timestamp DESC);
       CREATE INDEX IF NOT EXISTS idx_traceroutes_from ON traceroutes(from_id, timestamp DESC);
       CREATE INDEX IF NOT EXISTS idx_traceroutes_to ON traceroutes(to_id, timestamp DESC);
+    `);
+  }
+
+  // Migration from v6 to v7: add waypoints, neighbors, routing tables
+  if (fromVersion < 7 && toVersion >= 7) {
+    console.log('Migration v6 -> v7: Adding waypoints, neighbors, routing tables...');
+
+    // Waypoints table
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS waypoints (
+        id INTEGER PRIMARY KEY,
+        name TEXT NOT NULL DEFAULT '',
+        description TEXT,
+        latitude REAL NOT NULL,
+        longitude REAL NOT NULL,
+        icon INTEGER,
+        expire INTEGER,
+        locked_to INTEGER,
+        from_id TEXT NOT NULL,
+        timestamp INTEGER NOT NULL,
+        FOREIGN KEY (from_id) REFERENCES nodes(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Neighbors table
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS neighbors (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        node_id TEXT NOT NULL,
+        neighbor_id TEXT NOT NULL,
+        snr REAL,
+        timestamp INTEGER NOT NULL,
+        UNIQUE(node_id, neighbor_id),
+        FOREIGN KEY (node_id) REFERENCES nodes(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Routing table
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS routing (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        from_id TEXT NOT NULL,
+        to_id TEXT NOT NULL,
+        packet_id INTEGER,
+        error_reason INTEGER DEFAULT 0,
+        timestamp INTEGER NOT NULL,
+        FOREIGN KEY (from_id) REFERENCES nodes(id) ON DELETE CASCADE
+      )
+    `);
+
+    // Indexes
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_waypoints_timestamp ON waypoints(timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_waypoints_from ON waypoints(from_id);
+      CREATE INDEX IF NOT EXISTS idx_waypoints_location ON waypoints(latitude, longitude);
+      CREATE INDEX IF NOT EXISTS idx_neighbors_node ON neighbors(node_id);
+      CREATE INDEX IF NOT EXISTS idx_neighbors_neighbor ON neighbors(neighbor_id);
+      CREATE INDEX IF NOT EXISTS idx_neighbors_timestamp ON neighbors(timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_routing_timestamp ON routing(timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_routing_from ON routing(from_id);
+      CREATE INDEX IF NOT EXISTS idx_routing_to ON routing(to_id);
     `);
   }
 

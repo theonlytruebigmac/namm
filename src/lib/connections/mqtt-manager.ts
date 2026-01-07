@@ -56,6 +56,12 @@ interface MQTTConnectionInstance {
   subscribedTopics: Set<string>;
 }
 
+// Common WebSocket ports for MQTT brokers
+const MQTT_WS_PORT_MAPPINGS: Record<number, number> = {
+  1883: 8083,   // Standard MQTT -> WebSocket
+  8883: 8084,   // MQTT TLS -> WebSocket TLS (varies by broker)
+};
+
 // ============================================================================
 // Multi MQTT Manager Class
 // ============================================================================
@@ -75,6 +81,58 @@ export class MultiMQTTManager {
 
   constructor() {
     console.log("🔌 MultiMQTTManager initialized");
+  }
+
+  /**
+   * Convert MQTT URL to WebSocket URL for browser compatibility
+   * Browsers can only connect via WebSocket, not native MQTT protocol.
+   *
+   * Common broker WebSocket ports:
+   * - Mosquitto: 9001 (ws) or 9002 (wss)
+   * - EMQX: 8083 (ws) or 8084 (wss)
+   * - HiveMQ: 8000 (ws) or 8884 (wss)
+   *
+   * Note: If connection fails, the broker may use a different WS port.
+   * Check your broker's configuration for the WebSocket port.
+   */
+  private convertToWebSocketUrl(url: string): string {
+    // Already a WebSocket URL - use as-is
+    if (url.startsWith('ws://') || url.startsWith('wss://')) {
+      return url;
+    }
+
+    try {
+      // Parse the URL
+      let parsedUrl: URL;
+
+      if (url.startsWith('mqtt://')) {
+        // Replace mqtt:// with ws:// for parsing
+        parsedUrl = new URL(url.replace('mqtt://', 'ws://'));
+      } else if (url.startsWith('mqtts://')) {
+        // Replace mqtts:// with wss:// for parsing
+        parsedUrl = new URL(url.replace('mqtts://', 'wss://'));
+      } else {
+        // Assume ws:// if no protocol
+        parsedUrl = new URL(`ws://${url}`);
+      }
+
+      const originalPort = parseInt(parsedUrl.port) || 1883;
+
+      // Map common MQTT ports to WebSocket ports
+      const wsPort = MQTT_WS_PORT_MAPPINGS[originalPort] || originalPort;
+
+      if (wsPort !== originalPort) {
+        console.log(`⚠️ Converting MQTT port ${originalPort} to WebSocket port ${wsPort}`);
+        console.log(`   If connection fails, check your broker's WebSocket port configuration.`);
+        parsedUrl.port = wsPort.toString();
+      }
+
+      return parsedUrl.toString();
+    } catch (error) {
+      console.error('Failed to parse broker URL:', url, error);
+      // Return original URL and let mqtt.js handle it
+      return url;
+    }
   }
 
   // ==========================================================================
@@ -167,6 +225,10 @@ export class MultiMQTTManager {
     this.updateStatus(connectionId, "connecting");
 
     const { config } = instance;
+
+    // Convert broker URL for browser WebSocket compatibility
+    const brokerUrl = this.convertToWebSocketUrl(config.brokerUrl);
+
     const options: IClientOptions = {
       clientId: config.clientId || `namm_${connectionId.slice(-8)}_${Math.random().toString(16).slice(2, 6)}`,
       username: config.username,
@@ -176,8 +238,8 @@ export class MultiMQTTManager {
       keepalive: 60,
     };
 
-    console.log(`🔌 Connecting to ${config.name}: ${config.brokerUrl}`);
-    instance.client = mqtt.connect(config.brokerUrl, options);
+    console.log(`🔌 Connecting to ${config.name}: ${brokerUrl}`);
+    instance.client = mqtt.connect(brokerUrl, options);
 
     // Connection events
     instance.client.on("connect", () => {

@@ -55,6 +55,7 @@ interface SerialConnectionCardProps {
   onToggle: () => void;
   isConnected?: boolean;
   isConnecting?: boolean;
+  messageCount?: number;
 }
 
 function SerialConnectionCard({
@@ -66,6 +67,7 @@ function SerialConnectionCard({
   onToggle,
   isConnected = false,
   isConnecting = false,
+  messageCount = 0,
 }: SerialConnectionCardProps) {
   return (
     <Card className={!config.enabled ? "opacity-60" : ""}>
@@ -156,6 +158,12 @@ function SerialConnectionCard({
             <span className="font-medium">{config.autoConnect ? "Yes" : "No"}</span>
           </div>
         </div>
+        {isConnected && (
+          <div className="mt-2 text-xs">
+            <span className="text-muted-foreground">Messages:</span>{" "}
+            <span className="font-medium text-orange-500">{messageCount}</span>
+          </div>
+        )}
       </CardContent>
     </Card>
   );
@@ -301,6 +309,7 @@ export function SerialConnectionsManager() {
     isSupported,
     isConnected,
     isConnecting,
+    messageCount,
     connect,
     disconnect,
     error: serialError,
@@ -410,6 +419,7 @@ export function SerialConnectionsManager() {
               onToggle={() => toggle(config.id)}
               isConnected={isConnected}
               isConnecting={isConnecting}
+              messageCount={messageCount}
             />
           ))}
           <Card

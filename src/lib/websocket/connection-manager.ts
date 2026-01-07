@@ -46,7 +46,8 @@ export class ConnectionManager {
     });
 
     // Set up close handler
-    ws.on('close', () => {
+    ws.on('close', (code, reason) => {
+      console.log(`[WS Close] Connection ${id} closed with code=${code}, reason="${reason?.toString() || 'none'}"`);
       this.remove(id);
     });
 
@@ -102,33 +103,31 @@ export class ConnectionManager {
 
   /**
    * Send message to specific connection
+   * Note: Compression disabled - browser client doesn't support gzip decompression
    */
-  send(id: string, message: WSServerMessage, useCompression: boolean = true): boolean {
+  send(id: string, message: WSServerMessage, useCompression: boolean = false): boolean {
     const ws = this.connections.get(id);
     const state = this.states.get(id);
 
     if (!ws || !state) return false;
-    if (ws.readyState !== ws.OPEN) return false;
+    if (ws.readyState !== ws.OPEN) {
+      console.log(`[WS Send] Connection ${id} not open (readyState: ${ws.readyState})`);
+      return false;
+    }
 
     try {
       const payload = JSON.stringify(message);
+      console.log(`[WS Send] Sending ${payload.length} bytes to ${id} (type: ${message.type})`);
 
-      // Compress if enabled and payload is large
-      if (useCompression) {
-        const { data, compressed } = compressIfNeeded(payload, { threshold: 1024 });
-
-        if (compressed) {
-          // Send compressed data with indicator
-          ws.send(data);
-          state.bytesTransmitted += (data as Buffer).length;
+      // Always send as text for browser compatibility
+      ws.send(payload, (err) => {
+        if (err) {
+          console.error(`[WS Send] Error in send callback for ${id}:`, err);
         } else {
-          ws.send(payload);
-          state.bytesTransmitted += payload.length;
+          console.log(`[WS Send] Successfully sent ${payload.length} bytes to ${id}`);
         }
-      } else {
-        ws.send(payload);
-        state.bytesTransmitted += payload.length;
-      }
+      });
+      state.bytesTransmitted += payload.length;
 
       // Update stats
       state.messagesSent++;

@@ -18,7 +18,6 @@ import type { Node, Message } from "@/types";
  */
 export function useWebSocket(autoConnect = true) {
   const wsManager = useRef<ReturnType<typeof getWebSocketManager> | null>(null);
-  const isConnectedRef = useRef(false);
 
   // Initialize manager client-side only
   useEffect(() => {
@@ -30,17 +29,13 @@ export function useWebSocket(autoConnect = true) {
   useEffect(() => {
     if (!wsManager.current) return;
 
-    if (autoConnect && !isConnectedRef.current) {
+    // Only connect if autoConnect is true
+    // Do NOT disconnect on cleanup - this is a singleton shared across components
+    if (autoConnect) {
       wsManager.current.connect();
-      isConnectedRef.current = true;
     }
 
-    return () => {
-      if (isConnectedRef.current && wsManager.current) {
-        wsManager.current.disconnect();
-        isConnectedRef.current = false;
-      }
-    };
+    // No cleanup - singleton connection stays alive
   }, [autoConnect]);
 
   const connect = useCallback(() => {

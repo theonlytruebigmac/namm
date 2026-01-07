@@ -391,6 +391,17 @@ export function AddMQTTConnectionDialog({
                 placeholder="1883"
               />
             </div>
+            {(protocol === "mqtt" || protocol === "mqtts") && (
+              <div className="bg-blue-500/10 border border-blue-500/20 rounded-md p-3 text-xs">
+                <p className="font-medium text-blue-600 dark:text-blue-400 mb-1">
+                  ℹ️ Server-Side Connection
+                </p>
+                <p className="text-muted-foreground">
+                  Native MQTT (tcp://) requires server-side connection. Browsers can only connect via WebSocket (ws/wss).
+                  This connection will be handled by the NAMM server.
+                </p>
+              </div>
+            )}
             <p className="text-xs text-muted-foreground">
               Protocol, hostname, and port
             </p>

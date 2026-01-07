@@ -5,7 +5,42 @@
  */
 
 import { transformNode, transformMessage, type APINode, type APIMessage } from "./transformers";
-import type { Node, Message } from "@/types";
+import type { Node, Message, NodeRole } from "@/types";
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+/**
+ * Transform NodeUpdate (flat format from WebSocket) to Node
+ * Handles both NodeUpdate format and APINode format
+ */
+function transformNodeUpdate(data: Record<string, unknown>): Node {
+  // If it has a 'user' property, it's APINode format
+  if (data.user) {
+    return transformNode(data as unknown as APINode);
+  }
+
+  // Otherwise it's NodeUpdate format (flat)
+  return {
+    id: data.id as string,
+    nodeNum: (data.nodeNum as number) || 0,
+    shortName: (data.shortName as string) || "Unknown",
+    longName: (data.longName as string) || "Unknown Node",
+    hwModel: (data.hwModel as string) || "Unknown",
+    role: ((data.role as string) || "CLIENT") as NodeRole,
+    batteryLevel: data.batteryLevel as number | undefined,
+    voltage: data.voltage as number | undefined,
+    channelUtilization: data.channelUtilization as number | undefined,
+    airUtilTx: data.airUtilTx as number | undefined,
+    uptime: data.uptime as number | undefined,
+    lastHeard: (data.lastHeard as number) || Date.now(),
+    snr: data.snr as number | undefined,
+    rssi: data.rssi as number | undefined,
+    hopsAway: data.hopsAway as number | undefined,
+    isFavorite: false,
+  };
+}
 
 // ============================================================================
 // WebSocket Event Types
@@ -17,6 +52,7 @@ export type WebSocketEventType =
   | "message.new"
   | "device.stats"
   | "device.connection"
+  | "mqtt_raw"
   | "error";
 
 export interface WebSocketEvent {
@@ -68,14 +104,37 @@ export interface WSErrorEvent extends WebSocketEvent {
 
 export type EventHandler<T = unknown> = (data: T) => void;
 
+// MQTT Raw packet type
+export interface MQTTRawPacket {
+  id: number;
+  topic: string;
+  payload: string;
+  timestamp: number;
+  parsedType: string;
+  nodeId?: string;
+  data?: unknown;
+}
+
 interface EventHandlers {
   "node.update": EventHandler<Node>[];
   "node.new": EventHandler<Node>[];
   "message.new": EventHandler<Message>[];
   "device.stats": EventHandler<DeviceStatsEvent["data"]>[];
   "device.connection": EventHandler<ConnectionEvent["data"]>[];
+  "mqtt_raw": EventHandler<MQTTRawPacket[]>[];
   error: EventHandler<WSErrorEvent["data"]>[];
 }
+
+// Type to extract handler data type from event type
+type EventDataType<T extends WebSocketEventType> =
+  T extends "node.update" ? Node :
+  T extends "node.new" ? Node :
+  T extends "message.new" ? Message :
+  T extends "device.stats" ? DeviceStatsEvent["data"] :
+  T extends "device.connection" ? ConnectionEvent["data"] :
+  T extends "mqtt_raw" ? MQTTRawPacket[] :
+  T extends "error" ? WSErrorEvent["data"] :
+  unknown;
 
 // ============================================================================
 // WebSocket Manager Class
@@ -94,6 +153,7 @@ export class WebSocketManager {
     "message.new": [],
     "device.stats": [],
     "device.connection": [],
+    "mqtt_raw": [],
     error: [],
   };
   private isIntentionallyClosed = false;
@@ -123,7 +183,9 @@ export class WebSocketManager {
    * Connect to WebSocket server
    */
   connect(): void {
+    console.log(`[WS Client] connect() called, current ws readyState: ${this.ws?.readyState}`);
     if (this.ws?.readyState === WebSocket.OPEN) {
+      console.log(`[WS Client] Already connected, skipping`);
       return;
     }
 
@@ -135,6 +197,7 @@ export class WebSocketManager {
         console.log(`Connecting to WebSocket: ${this.url}`);
       }
       this.ws = new WebSocket(this.url);
+      console.log(`[WS Client] Created new WebSocket, readyState: ${this.ws.readyState}`);
 
       this.ws.onopen = this.handleOpen.bind(this);
       this.ws.onmessage = this.handleMessage.bind(this);
@@ -152,6 +215,8 @@ export class WebSocketManager {
    * Disconnect from WebSocket server
    */
   disconnect(): void {
+    console.log(`[WS Client] disconnect() called`);
+    console.trace("[WS Client] disconnect() stack trace");
     this.isIntentionallyClosed = true;
 
     if (this.reconnectTimeout) {
@@ -179,13 +244,13 @@ export class WebSocketManager {
    */
   on<T extends WebSocketEventType>(
     event: T,
-    handler: EventHandler
+    handler: EventHandler<EventDataType<T>>
   ): () => void {
-    this.handlers[event].push(handler);
+    (this.handlers[event] as EventHandler<EventDataType<T>>[]).push(handler);
 
     // Return unsubscribe function
     return () => {
-      const handlers = this.handlers[event];
+      const handlers = this.handlers[event] as EventHandler<EventDataType<T>>[];
       const index = handlers.indexOf(handler);
       if (index > -1) {
         handlers.splice(index, 1);
@@ -196,8 +261,8 @@ export class WebSocketManager {
   /**
    * Unsubscribe from WebSocket events
    */
-  off<T extends WebSocketEventType>(event: T, handler: EventHandler): void {
-    const handlers = this.handlers[event];
+  off<T extends WebSocketEventType>(event: T, handler: EventHandler<EventDataType<T>>): void {
+    const handlers = this.handlers[event] as EventHandler<EventDataType<T>>[];
     const index = handlers.indexOf(handler);
     if (index > -1) {
       handlers.splice(index, 1);
@@ -220,7 +285,29 @@ export class WebSocketManager {
    */
   private handleMessage(event: MessageEvent): void {
     try {
-      const message = JSON.parse(event.data);
+      // Handle both string and Blob data
+      if (event.data instanceof Blob) {
+        // Convert Blob to text, then parse
+        event.data.text().then(text => {
+          this.processMessage(text);
+        }).catch(err => {
+          console.error("Failed to read WebSocket Blob:", err);
+        });
+        return;
+      }
+
+      this.processMessage(event.data);
+    } catch (error) {
+      console.error("Failed to parse WebSocket message:", error);
+    }
+  }
+
+  /**
+   * Process parsed WebSocket message
+   */
+  private processMessage(data: string): void {
+    try {
+      const message = JSON.parse(data);
 
       switch (message.type) {
         // Handle server format (node_update, message, etc.)
@@ -228,7 +315,7 @@ export class WebSocketManager {
           // Server sends { type: 'node_update', nodes: [...] }
           if (message.nodes && Array.isArray(message.nodes)) {
             for (const nodeData of message.nodes) {
-              const node = transformNode(nodeData);
+              const node = transformNodeUpdate(nodeData);
               this.emit("node.update", node);
             }
           }
@@ -248,12 +335,14 @@ export class WebSocketManager {
 
         case "snapshot": {
           // Handle initial snapshot
+          console.log("WebSocket: Received snapshot message, parsing...");
           if (message.data) {
             const { nodes, positions, recentMessages } = message.data;
+            console.log(`WebSocket: Snapshot has ${nodes?.length || 0} nodes, ${positions?.length || 0} positions, ${recentMessages?.length || 0} messages`);
             // Emit nodes
             if (nodes && Array.isArray(nodes)) {
               for (const nodeData of nodes) {
-                const node = transformNode(nodeData);
+                const node = transformNodeUpdate(nodeData);
                 this.emit("node.new", node);
               }
             }
@@ -264,6 +353,15 @@ export class WebSocketManager {
                 this.emit("message.new", transformedMessage);
               }
             }
+            console.log("WebSocket: Snapshot processed successfully, connection should stay open");
+          }
+          break;
+        }
+
+        case "mqtt_raw": {
+          // Handle MQTT raw packets for live stream
+          if (message.packets && Array.isArray(message.packets)) {
+            this.emit("mqtt_raw", message.packets);
           }
           break;
         }
@@ -286,7 +384,7 @@ export class WebSocketManager {
         case "node.update":
         case "node.new": {
           const nodeEvent = message as NodeUpdateEvent;
-          const node = transformNode(nodeEvent.data);
+          const node = transformNodeUpdate(nodeEvent.data as unknown as Record<string, unknown>);
           this.emit(message.type, node);
           break;
         }
@@ -338,10 +436,8 @@ export class WebSocketManager {
    * Handle WebSocket close
    */
   private handleClose(event: CloseEvent): void {
-    // Only log if this isn't during reconnection attempts
-    if (this.reconnectAttempts === 0) {
-      console.log(`WebSocket closed: ${event.code} - ${event.reason || "Connection closed"}`);
-    }
+    // Always log close with details
+    console.log(`WebSocket closed: code=${event.code}, reason="${event.reason || 'none'}", wasClean=${event.wasClean}`);
 
     // Notify disconnection
     this.emit("device.connection", {
@@ -428,7 +524,10 @@ let wsManager: WebSocketManager | null = null;
  */
 export function getWebSocketManager(url?: string): WebSocketManager {
   if (!wsManager) {
+    console.log("[WS Client] Creating new WebSocketManager singleton");
     wsManager = new WebSocketManager(url);
+  } else {
+    console.log("[WS Client] Reusing existing WebSocketManager singleton");
   }
   return wsManager;
 }

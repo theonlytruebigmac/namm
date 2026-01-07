@@ -29,6 +29,7 @@ import {
   Battery,
   Navigation,
   Route,
+  MapPinned,
 } from "lucide-react";
 
 // Lazy-load the packet decoder to avoid bundler issues
@@ -41,11 +42,112 @@ async function getPacketDecoder() {
   return packetDecoder;
 }
 
+// Port numbers for filtering (inline to avoid lazy-load issues)
+const PORTNUM = {
+  UNKNOWN_APP: 0,
+  TEXT_MESSAGE_APP: 1,
+  POSITION_APP: 3,
+  NODEINFO_APP: 4,
+  ROUTING_APP: 5,
+  WAYPOINT_APP: 8,
+  TELEMETRY_APP: 67,
+  TRACEROUTE_APP: 70,
+  NEIGHBORINFO_APP: 71,
+} as const;
+
+// Convert node number to hex ID string (e.g., !298a814d)
+function nodeNumToId(num: number): string {
+  // Handle negative numbers (unsigned 32-bit representation)
+  const unsigned = num >>> 0;
+  return `!${unsigned.toString(16).padStart(8, '0')}`;
+}
+
+// Get portnum name from number (inline to avoid lazy-load issues)
+function getPortnumName(portnum: number): string {
+  const names: Record<number, string> = {
+    0: "UNKNOWN",
+    1: "TEXT_MESSAGE",
+    3: "POSITION",
+    4: "NODEINFO",
+    5: "ROUTING",
+    8: "WAYPOINT",
+    67: "TELEMETRY",
+    70: "TRACEROUTE",
+    71: "NEIGHBORINFO",
+  };
+  return names[portnum] || `PORTNUM_${portnum}`;
+}
+
 // Type for decoded payload (inline to avoid import issues)
 interface DecodedPayload {
   type: string;
   portnum: number;
   portnumName: string;
+  text?: string;
+  position?: {
+    latitude?: number;
+    longitude?: number;
+    altitude?: number;
+    time?: number;
+  };
+  user?: {
+    id?: string;
+    longName?: string;
+    shortName?: string;
+    hwModelName?: string;
+    role?: number;
+  };
+  telemetry?: {
+    deviceMetrics?: {
+      batteryLevel?: number;
+      voltage?: number;
+      channelUtilization?: number;
+      airUtilTx?: number;
+      uptimeSeconds?: number;
+    };
+    environmentMetrics?: {
+      temperature?: number;
+      relativeHumidity?: number;
+      barometricPressure?: number;
+    };
+    powerMetrics?: {
+      ch1Voltage?: number;
+      ch1Current?: number;
+      ch2Voltage?: number;
+      ch2Current?: number;
+      ch3Voltage?: number;
+      ch3Current?: number;
+    };
+  };
+  neighbors?: Array<{
+    nodeId: number;
+    snr?: number;
+  }>;
+  route?: number[];
+  waypoint?: {
+    id?: number;
+    name?: string;
+    description?: string;
+    latitude?: number;
+    longitude?: number;
+    icon?: number;
+    expire?: number;
+  };
+  neighborInfo?: {
+    nodeId?: number;
+    neighbors?: Array<{
+      nodeId: number;
+      snr?: number;
+    }>;
+  };
+  routing?: {
+    errorReason?: number;
+    errorReasonName?: string;
+  };
+  traceroute?: {
+    route?: number[];
+    routeBack?: number[];
+  };
   [key: string]: unknown;
 }
 
@@ -165,6 +267,23 @@ export default function SerialPage() {
     }
   }, [disconnect]);
 
+  // Get a more specific type for filtering based on decoded payload
+  const getFilterType = (message: SerialMessage): string => {
+    if (message.type === "packet" && message.decodedPayload) {
+      switch (message.decodedPayload.portnum) {
+        case PORTNUM.TEXT_MESSAGE_APP:
+          return "text";
+        case PORTNUM.POSITION_APP:
+          return "position";
+        case PORTNUM.TELEMETRY_APP:
+          return "telemetry";
+        default:
+          return "packet";
+      }
+    }
+    return message.type;
+  };
+
   // Calculate message type stats (including decoded packet types)
   const messageStats = useMemo(() => {
     const stats: Record<string, number> = {};
@@ -213,23 +332,6 @@ export default function SerialPage() {
   };
 
   const messageTypes = ["all", "myInfo", "nodeInfo", "packet", "position", "telemetry", "text", "channel", "config", "configComplete", "metadata", "unknown"];
-
-  // Get a more specific type for filtering based on decoded payload
-  const getFilterType = (message: SerialMessage): string => {
-    if (message.type === "packet" && message.decodedPayload) {
-      switch (message.decodedPayload.portnum) {
-        case PORTNUM.TEXT_MESSAGE_APP:
-          return "text";
-        case PORTNUM.POSITION_APP:
-          return "position";
-        case PORTNUM.TELEMETRY_APP:
-          return "telemetry";
-        default:
-          return "packet";
-      }
-    }
-    return message.type;
-  };
 
   const formatPayload = (message: SerialMessage) => {
     // If we have decoded payload, show that in a more readable format
@@ -298,6 +400,16 @@ export default function SerialPage() {
           routeBack: decoded.traceroute.routeBack?.map(n => nodeNumToId(n)),
         };
       }
+      if (decoded.waypoint) {
+        formatted.waypoint = {
+          id: decoded.waypoint.id,
+          name: decoded.waypoint.name,
+          description: decoded.waypoint.description,
+          latitude: decoded.waypoint.latitude?.toFixed(6),
+          longitude: decoded.waypoint.longitude?.toFixed(6),
+          expire: decoded.waypoint.expire ? new Date(decoded.waypoint.expire * 1000).toISOString() : undefined,
+        };
+      }
 
       // Also include the original packet metadata
       if (message.data.packet) {
@@ -309,6 +421,19 @@ export default function SerialPage() {
         if (packet.rxRssi !== undefined) formatted.rssi = packet.rxRssi;
       }
 
+      return JSON.stringify(formatted, null, 2);
+    }
+
+    // Format channel data nicely
+    if (message.type === "channel" && message.data.channel) {
+      const channel = message.data.channel as Record<string, unknown>;
+      const roleNames: Record<number, string> = { 0: "Disabled", 1: "Primary", 2: "Secondary" };
+      const formatted = {
+        index: channel.index,
+        name: channel.name || "(default)",
+        role: roleNames[(channel.role as number) ?? 0] || channel.role,
+        hasPsk: !!channel.psk,
+      };
       return JSON.stringify(formatted, null, 2);
     }
 
@@ -328,6 +453,8 @@ export default function SerialPage() {
           return <MapPin className="h-4 w-4" />;
         case PORTNUM.NODEINFO_APP:
           return <Users className="h-4 w-4" />;
+        case PORTNUM.WAYPOINT_APP:
+          return <MapPinned className="h-4 w-4" />;
         case PORTNUM.TELEMETRY_APP:
           return <BarChart className="h-4 w-4" />;
         case PORTNUM.NEIGHBORINFO_APP:
@@ -365,13 +492,18 @@ export default function SerialPage() {
 
     switch (type) {
       case "myInfo":
-        return `My Node: ${data.myNodeNum || "Unknown"}`;
+        // myInfo structure: { myInfo: { myNodeNum: ... } }
+        const myInfo = data.myInfo as Record<string, unknown> | undefined;
+        return `My Node: ${myInfo?.myNodeNum || data.myNodeNum || "Unknown"}`;
       case "nodeInfo":
-        if (data.user && typeof data.user === "object") {
-          const user = data.user as Record<string, unknown>;
-          return `Node: ${user.longName || user.shortName || data.num || "Unknown"}`;
+        // nodeInfo structure: { nodeInfo: { num: ..., user: { longName, shortName, ... } } }
+        const nodeInfo = data.nodeInfo as Record<string, unknown> | undefined;
+        const user = nodeInfo?.user as Record<string, unknown> | undefined;
+        if (user) {
+          return `Node: ${user.longName || user.shortName || nodeInfo?.num || "Unknown"}`;
         }
-        return `Node: ${data.num || "Unknown"}`;
+        // Fallback to just the node number
+        return `Node: ${nodeInfo?.num || data.num || "Unknown"}`;
       case "packet":
         if (data.packet && typeof data.packet === "object") {
           const packet = data.packet as Record<string, unknown>;
@@ -394,6 +526,11 @@ export default function SerialPage() {
                   return `NodeInfo: ${decodedPayload.user.longName || decodedPayload.user.shortName || from}`;
                 }
                 return `NodeInfo: ${from}`;
+              case PORTNUM.WAYPOINT_APP:
+                if (decodedPayload.waypoint) {
+                  return `Waypoint: ${decodedPayload.waypoint.name || "Unnamed"} from ${from}`;
+                }
+                return `Waypoint: ${from}`;
               case PORTNUM.TELEMETRY_APP:
                 if (decodedPayload.telemetry?.deviceMetrics) {
                   const dm = decodedPayload.telemetry.deviceMetrics;
@@ -429,11 +566,18 @@ export default function SerialPage() {
         }
         return `Packet: ${data.from || "?"} → ${data.to || "?"}`;
       case "channel":
-        if (data.settings && typeof data.settings === "object") {
-          const settings = data.settings as Record<string, unknown>;
-          return `Channel ${data.index}: ${settings.name || "Unnamed"}`;
+        // Channel data comes in as { channel: { index, name, psk, role } }
+        if (data.channel && typeof data.channel === "object") {
+          const channel = data.channel as Record<string, unknown>;
+          const roleName = channel.role === 1 ? "Primary" : channel.role === 2 ? "Secondary" : "";
+          const name = channel.name || "Default";
+          return `Channel ${channel.index ?? 0}: ${name}${roleName ? ` (${roleName})` : ""}`;
         }
-        return `Channel: ${data.index || "?"}`;
+        // Fallback for direct structure
+        if (data.index !== undefined) {
+          return `Channel ${data.index}: ${data.name || "Default"}`;
+        }
+        return `Channel: ?`;
       case "config":
         return `Config: ${Object.keys(data)[0] || "Settings"}`;
       case "configComplete":
@@ -631,14 +775,14 @@ export default function SerialPage() {
           </div>
 
           {/* Filters */}
-          <div className="flex gap-4 mt-4">
-            <div className="relative flex-1">
+          <div className="flex flex-col gap-3 mt-4">
+            <div className="relative w-full max-w-md">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
                 placeholder="Search messages..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="pl-9"
+                className="pl-9 h-10"
               />
               {searchQuery && (
                 <Button
@@ -651,7 +795,7 @@ export default function SerialPage() {
                 </Button>
               )}
             </div>
-            <div className="flex gap-1 flex-wrap">
+            <div className="flex gap-1.5 flex-wrap">
               {messageTypes.map((type) => (
                 <Button
                   key={type}

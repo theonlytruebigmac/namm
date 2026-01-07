@@ -17,6 +17,7 @@ interface UseWebSerialReturn {
   error: string | null;
   myNodeNum: number | null;
   nodeCount: number;
+  messageCount: number;
 
   // Actions
   connect: () => Promise<boolean>;
@@ -31,11 +32,16 @@ export function useWebSerial(): UseWebSerialReturn {
   const [error, setError] = useState<string | null>(null);
   const [myNodeNum, setMyNodeNum] = useState<number | null>(null);
   const [nodeCount, setNodeCount] = useState(0);
+  const [messageCount, setMessageCount] = useState(0);
 
   // Check support on mount
   useEffect(() => {
     setIsSupported(webSerial.isSupported());
     setIsConnected(webSerial.isConnected());
+    // Restore message count from singleton if already connected
+    if (webSerial.isConnected()) {
+      setMessageCount(webSerial.getMessageCount());
+    }
   }, []);
 
   // Subscribe to status changes
@@ -45,10 +51,12 @@ export function useWebSerial(): UseWebSerialReturn {
       if (!connected) {
         setMyNodeNum(null);
         setNodeCount(0);
+        setMessageCount(0);
       }
     });
 
     const unsubMessage = webSerial.onMessage((message) => {
+      setMessageCount(webSerial.getMessageCount());
       handleMessage(message);
     });
 
@@ -68,6 +76,8 @@ export function useWebSerial(): UseWebSerialReturn {
             setMyNodeNum(myInfo.myNodeNum);
           }
         }
+        // Also forward to server so it knows our node
+        forwardToServer(message);
         break;
 
       case 'nodeInfo':
@@ -78,6 +88,11 @@ export function useWebSerial(): UseWebSerialReturn {
 
       case 'packet':
         // Forward to server for storage
+        forwardToServer(message);
+        break;
+
+      case 'metadata':
+        // Forward device metadata to server
         forwardToServer(message);
         break;
 
@@ -182,6 +197,7 @@ export function useWebSerial(): UseWebSerialReturn {
     error,
     myNodeNum,
     nodeCount,
+    messageCount,
     connect,
     disconnect,
     sendMessage,

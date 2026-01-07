@@ -2,6 +2,7 @@
 
 /**
  * Client-side hook to connect to server-side MQTT stream
+ * Now also supports server-side MQTT connections from Connection Manager
  */
 
 import { useEffect, useState, useCallback, useRef } from "react";
@@ -39,6 +40,13 @@ interface MQTTMessage {
   timestamp: number;
 }
 
+interface ServerConnection {
+  id: string;
+  name: string;
+  status: "connected" | "connecting" | "disconnected" | "error";
+  messagesReceived: number;
+}
+
 export function useMQTTServer() {
   const settings = useSettings();
   const [isConnected, setIsConnected] = useState(false);
@@ -47,7 +55,40 @@ export function useMQTTServer() {
   const eventSourceRef = useRef<EventSource | null>(null);
   const queryClient = useQueryClient();
 
+  // Track server-side connections from Connection Manager
+  const [serverConnections, setServerConnections] = useState<ServerConnection[]>([]);
+  const serverPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
   const shouldConnect = settings.connectionType === "mqtt";
+
+  // Poll server-side MQTT connections from Connection Manager
+  useEffect(() => {
+    const pollServerConnections = async () => {
+      try {
+        const res = await fetch("/api/mqtt/connections");
+        if (res.ok) {
+          const data = await res.json();
+          setServerConnections(data.connections || []);
+        }
+      } catch {
+        // Ignore errors - server connections are optional
+      }
+    };
+
+    // Poll immediately and then every 2 seconds
+    pollServerConnections();
+    serverPollRef.current = setInterval(pollServerConnections, 2000);
+
+    return () => {
+      if (serverPollRef.current) {
+        clearInterval(serverPollRef.current);
+      }
+    };
+  }, []);
+
+  // Calculate total connection status
+  const hasServerConnection = serverConnections.some(c => c.status === "connected");
+  const serverMessageCount = serverConnections.reduce((sum, c) => sum + c.messagesReceived, 0);
 
   useEffect(() => {
     if (!shouldConnect) {
@@ -210,10 +251,12 @@ export function useMQTTServer() {
     setIsConnected(false);
   }, []);
 
+  // Return combined status from both legacy EventSource and server-side connections
   return {
-    isConnected,
+    isConnected: isConnected || hasServerConnection,
     error,
-    messageCount,
+    messageCount: messageCount + serverMessageCount,
     disconnect,
+    serverConnections,
   };
 }

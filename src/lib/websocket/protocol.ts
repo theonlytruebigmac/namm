@@ -25,6 +25,7 @@ export type WSServerMessage =
   | { type: 'position_update'; positions: PositionUpdate[] }
   | { type: 'telemetry_update'; telemetry: TelemetryUpdate[] }
   | { type: 'message'; messages: MessageUpdate[] }
+  | { type: 'mqtt_raw'; packets: MQTTRawPacket[] }
   | { type: 'node_status'; nodeId: string; online: boolean }
   | { type: 'error'; error: string; code?: string };
 
@@ -105,6 +106,19 @@ export interface MessageUpdate {
   snr?: number;
   rssi?: number;
   hopsAway?: number;
+}
+
+/**
+ * Raw MQTT packet for live stream view
+ */
+export interface MQTTRawPacket {
+  id: number;
+  topic: string;
+  payload: string;
+  timestamp: number;
+  parsedType: string;
+  nodeId?: string;
+  data?: unknown;
 }
 
 /**

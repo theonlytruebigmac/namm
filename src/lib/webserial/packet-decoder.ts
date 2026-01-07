@@ -39,7 +39,7 @@ export const PORTNUM = {
   MAX: 511,
 } as const;
 
-// Hardware model names
+// Hardware model names (from Meshtastic protobufs)
 const HARDWARE_MODELS: Record<number, string> = {
   0: 'UNSET',
   1: 'TLORA_V2',
@@ -87,6 +87,33 @@ const HARDWARE_MODELS: Record<number, string> = {
   73: 'WIO_E5',
   77: 'M5STACK_COREBASIC',
   78: 'M5STACK_CORE2',
+  // Additional models from firmware 2.3+
+  79: 'LORA_RELAY_V1',
+  80: 'NRF52840DK',
+  81: 'PPR',
+  82: 'GENIEBLOCKS',
+  83: 'NRF52_UNKNOWN',
+  84: 'NANO_G2_ULTRA',
+  85: 'RP2040_LORA',
+  86: 'WIO_WM1110',
+  87: 'CANARYONE',
+  88: 'RADIOMASTER_900_BANDIT_NANO',
+  89: 'HELTEC_CAPSULE_SENSOR_V3',
+  90: 'STATION_G2',
+  91: 'LORA_RELAY_V2',
+  92: 'UNPHONE',
+  93: 'CDEBYTE_EORA_S3',
+  94: 'TWC_MESH_V4',
+  95: 'NRF52_PROMICRO_DIY',
+  96: 'RADIOMASTER_900_BANDIT',
+  97: 'HELTEC_MESH_NODE_T114',
+  98: 'HELTEC_CAPSULE_SENSOR_V3',
+  99: 'TBEAM_S3_CORE',
+  100: 'RAK4631_ETH_GW',
+  101: 'PRIVATE_HW',
+  // T-Echo variants
+  110: 'SEEED_XIAO_S3',
+  255: 'PRIVATE_HW',
 };
 
 // Port number names
@@ -319,6 +346,20 @@ export interface DecodedTraceroute {
   snrBack?: number[];
 }
 
+export interface DecodedWaypoint {
+  id?: number;
+  name?: string;
+  description?: string;
+  icon?: number;
+  latitudeI?: number;
+  longitudeI?: number;
+  expire?: number;
+  lockedTo?: number;
+  // Computed values
+  latitude?: number;
+  longitude?: number;
+}
+
 export interface DecodedPayload {
   portnum: number;
   portnumName: string;
@@ -329,6 +370,7 @@ export interface DecodedPayload {
   neighborInfo?: DecodedNeighborInfo;
   routing?: DecodedRouting;
   traceroute?: DecodedTraceroute;
+  waypoint?: DecodedWaypoint;
   rawPayload?: Record<string, number>;
 }
 
@@ -914,6 +956,106 @@ export function decodeTraceroute(data: Uint8Array): DecodedTraceroute | null {
 }
 
 /**
+ * Decode Waypoint payload
+ * Waypoint message structure:
+ *   1: id (uint32)
+ *   2: latitude_i (sfixed32)
+ *   3: longitude_i (sfixed32)
+ *   4: expire (uint32) - seconds since 1970
+ *   5: locked_to (uint32) - node num that can modify
+ *   6: name (string)
+ *   7: description (string)
+ *   8: icon (fixed32) - emoji codepoint
+ */
+export function decodeWaypoint(data: Uint8Array): DecodedWaypoint | null {
+  try {
+    const result: DecodedWaypoint = {};
+    let offset = 0;
+
+    while (offset < data.length) {
+      const [fieldNum, wireType, headerBytes] = parseFieldHeader(data, offset);
+      offset += headerBytes;
+
+      switch (fieldNum) {
+        case 1: // id (uint32)
+          if (wireType === WIRE_TYPE_VARINT) {
+            const [value, bytes] = readVarint(data, offset);
+            result.id = value;
+            offset += bytes;
+          }
+          break;
+        case 2: // latitude_i (sfixed32)
+          if (wireType === WIRE_TYPE_FIXED32) {
+            result.latitudeI = readInt32LE(data, offset);
+            offset += 4;
+          }
+          break;
+        case 3: // longitude_i (sfixed32)
+          if (wireType === WIRE_TYPE_FIXED32) {
+            result.longitudeI = readInt32LE(data, offset);
+            offset += 4;
+          }
+          break;
+        case 4: // expire
+          if (wireType === WIRE_TYPE_VARINT) {
+            const [value, bytes] = readVarint(data, offset);
+            result.expire = value;
+            offset += bytes;
+          } else if (wireType === WIRE_TYPE_FIXED32) {
+            result.expire = readUint32LE(data, offset);
+            offset += 4;
+          }
+          break;
+        case 5: // locked_to
+          if (wireType === WIRE_TYPE_VARINT) {
+            const [value, bytes] = readVarint(data, offset);
+            result.lockedTo = value;
+            offset += bytes;
+          }
+          break;
+        case 6: // name (string)
+          if (wireType === WIRE_TYPE_LENGTH_DELIMITED) {
+            const [length, bytes] = readVarint(data, offset);
+            offset += bytes;
+            result.name = new TextDecoder().decode(data.slice(offset, offset + length));
+            offset += length;
+          }
+          break;
+        case 7: // description (string)
+          if (wireType === WIRE_TYPE_LENGTH_DELIMITED) {
+            const [length, bytes] = readVarint(data, offset);
+            offset += bytes;
+            result.description = new TextDecoder().decode(data.slice(offset, offset + length));
+            offset += length;
+          }
+          break;
+        case 8: // icon (fixed32)
+          if (wireType === WIRE_TYPE_FIXED32) {
+            result.icon = readUint32LE(data, offset);
+            offset += 4;
+          }
+          break;
+        default:
+          offset += skipField(data, offset, wireType);
+      }
+    }
+
+    // Compute lat/lon
+    if (result.latitudeI !== undefined) {
+      result.latitude = result.latitudeI / 1e7;
+    }
+    if (result.longitudeI !== undefined) {
+      result.longitude = result.longitudeI / 1e7;
+    }
+
+    return result;
+  } catch (error) {
+    console.error('[PacketDecoder] Failed to decode Waypoint:', error);
+    return null;
+  }
+}
+
+/**
  * Convert a payload object (with numeric keys) to Uint8Array
  */
 export function payloadToUint8Array(payload: Record<string, number> | Uint8Array): Uint8Array {
@@ -971,6 +1113,10 @@ export function decodePacketPayload(
 
     case PORTNUM.NODEINFO_APP:
       result.user = decodeUser(data) || undefined;
+      break;
+
+    case PORTNUM.WAYPOINT_APP:
+      result.waypoint = decodeWaypoint(data) || undefined;
       break;
 
     case PORTNUM.TELEMETRY_APP:

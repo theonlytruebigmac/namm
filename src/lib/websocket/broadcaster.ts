@@ -13,6 +13,7 @@ import type {
   PositionUpdate,
   TelemetryUpdate,
   MessageUpdate,
+  MQTTRawPacket,
   SnapshotData,
   SubscriptionFilter
 } from './protocol';
@@ -34,10 +35,12 @@ export class Broadcaster {
     nodes: new Map<string, NodeUpdate>(),
     positions: [] as PositionUpdate[],
     telemetry: [] as TelemetryUpdate[],
-    messages: [] as MessageUpdate[]
+    messages: [] as MessageUpdate[],
+    mqttRaw: [] as MQTTRawPacket[]
   };
   private broadcastTimer: NodeJS.Timeout | null = null;
   private broadcastIntervalMs = 100; // Broadcast every 100ms
+  private mqttPacketId = 0;
 
   constructor(private connectionManager: ConnectionManager) {
     const db = getDatabase();
@@ -75,6 +78,22 @@ export class Broadcaster {
    */
   queueMessage(update: MessageUpdate): void {
     this.pendingUpdates.messages.push(update);
+  }
+
+  /**
+   * Queue a raw MQTT packet for live stream broadcast
+   */
+  queueMQTTRaw(topic: string, payload: string, parsedType: string, nodeId?: string, data?: unknown): void {
+    this.mqttPacketId++;
+    this.pendingUpdates.mqttRaw.push({
+      id: this.mqttPacketId,
+      topic,
+      payload,
+      timestamp: Date.now(),
+      parsedType,
+      nodeId,
+      data
+    });
   }
 
   /**
@@ -135,7 +154,8 @@ export class Broadcaster {
       this.pendingUpdates.nodes.size === 0 &&
       this.pendingUpdates.positions.length === 0 &&
       this.pendingUpdates.telemetry.length === 0 &&
-      this.pendingUpdates.messages.length === 0
+      this.pendingUpdates.messages.length === 0 &&
+      this.pendingUpdates.mqttRaw.length === 0
     ) {
       return;
     }
@@ -175,6 +195,15 @@ export class Broadcaster {
         messages: this.pendingUpdates.messages
       });
       this.pendingUpdates.messages = [];
+    }
+
+    // Broadcast raw MQTT packets for live stream
+    if (this.pendingUpdates.mqttRaw.length > 0) {
+      this.broadcastFiltered({
+        type: 'mqtt_raw',
+        packets: this.pendingUpdates.mqttRaw
+      });
+      this.pendingUpdates.mqttRaw = [];
     }
   }
 

@@ -13,8 +13,48 @@ export class NodeRepository {
 
   /**
    * Upsert a node (insert or update if exists)
+   * Handles conflicts on both id and node_num
    */
   upsert(node: ProcessedNodeInfo): Database.RunResult {
+    // First, check if a node with this node_num already exists with a different id
+    // This can happen when node IDs change but node_num stays the same
+    const existing = this.db.prepare(
+      'SELECT id FROM nodes WHERE node_num = ? AND id != ?'
+    ).get(node.nodeNum, node.id) as { id: string } | undefined;
+
+    if (existing) {
+      // Update the existing record to use the new id
+      const updateStmt = this.db.prepare(`
+        UPDATE nodes SET
+          id = @id,
+          short_name = @shortName,
+          long_name = @longName,
+          hw_model = @hwModel,
+          role = @role,
+          last_heard = @lastHeard,
+          snr = @snr,
+          rssi = @rssi,
+          hops_away = @hopsAway,
+          updated_at = @now
+        WHERE node_num = @nodeNum
+      `);
+
+      return updateStmt.run({
+        id: node.id,
+        nodeNum: node.nodeNum,
+        shortName: node.shortName,
+        longName: node.longName,
+        hwModel: node.hwModel,
+        role: node.role,
+        lastHeard: node.lastHeard,
+        snr: node.snr ?? null,
+        rssi: node.rssi ?? null,
+        hopsAway: node.hopsAway ?? null,
+        now: Date.now()
+      });
+    }
+
+    // Standard upsert on id
     const stmt = this.db.prepare(`
       INSERT INTO nodes (
         id, node_num, short_name, long_name, hw_model, role,
@@ -25,6 +65,7 @@ export class NodeRepository {
         @lastHeard, @snr, @rssi, @hopsAway, @now, @now
       )
       ON CONFLICT(id) DO UPDATE SET
+        node_num = @nodeNum,
         short_name = @shortName,
         long_name = @longName,
         hw_model = @hwModel,

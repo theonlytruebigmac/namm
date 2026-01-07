@@ -176,6 +176,25 @@ export class MQTTWorker {
         return;
       }
 
+      // Broadcast raw MQTT packet for live stream view
+      // Do this early so all packets show in the stream regardless of processing
+      const broadcaster = getBroadcaster();
+      if (broadcaster) {
+        // Extract nodeId for the packet
+        let nodeId: string | undefined;
+        if ('data' in result && result.data) {
+          const d = result.data as Record<string, unknown>;
+          nodeId = (d.id as string) || (d.nodeId as string) || (d.from as string);
+        }
+        broadcaster.queueMQTTRaw(
+          topic,
+          payload.toString('base64'),
+          result.type,
+          nodeId,
+          'data' in result ? result.data : undefined
+        );
+      }
+
       // Extract processed data - only process messages with data
       if (!('data' in result) || !result.data) {
         // Log unsupported message types for debugging (sample every 10th)

@@ -10,15 +10,26 @@ import { ConnectionManager } from './connection-manager';
 import { Broadcaster } from './broadcaster';
 import { randomUUID } from 'crypto';
 
-let wsServer: WebSocketServer | null = null;
-let connectionManager: ConnectionManager | null = null;
-let broadcaster: Broadcaster | null = null;
+// Use global variables to ensure singleton across Next.js API routes
+// This is necessary because Next.js can create multiple module instances
+declare global {
+  // eslint-disable-next-line no-var
+  var __wsServer: WebSocketServer | null;
+  // eslint-disable-next-line no-var
+  var __connectionManager: ConnectionManager | null;
+  // eslint-disable-next-line no-var
+  var __broadcaster: Broadcaster | null;
+}
+
+globalThis.__wsServer = globalThis.__wsServer || null;
+globalThis.__connectionManager = globalThis.__connectionManager || null;
+globalThis.__broadcaster = globalThis.__broadcaster || null;
 
 /**
  * Initialize WebSocket server
  */
 export function initWebSocketServer(server: any): void {
-  if (wsServer) {
+  if (globalThis.__wsServer) {
     console.log('WebSocket server already initialized');
     return;
   }
@@ -26,21 +37,21 @@ export function initWebSocketServer(server: any): void {
   console.log('Initializing WebSocket server...');
 
   // Create WebSocket server
-  wsServer = new WebSocketServer({ noServer: true });
+  globalThis.__wsServer = new WebSocketServer({ noServer: true });
 
   // Create connection manager
-  connectionManager = new ConnectionManager();
+  globalThis.__connectionManager = new ConnectionManager();
 
   // Create broadcaster
-  broadcaster = new Broadcaster(connectionManager);
+  globalThis.__broadcaster = new Broadcaster(globalThis.__connectionManager);
 
   // Handle upgrade requests
   server.on('upgrade', (request: IncomingMessage, socket: any, head: Buffer) => {
     const { pathname } = new URL(request.url || '', `http://${request.headers.host}`);
 
     if (pathname === '/api/ws') {
-      wsServer!.handleUpgrade(request, socket, head, (ws) => {
-        wsServer!.emit('connection', ws, request);
+      globalThis.__wsServer!.handleUpgrade(request, socket, head, (ws) => {
+        globalThis.__wsServer!.emit('connection', ws, request);
       });
     } else {
       socket.destroy();
@@ -48,17 +59,31 @@ export function initWebSocketServer(server: any): void {
   });
 
   // Handle new connections
-  wsServer.on('connection', (ws: WebSocket, request: IncomingMessage) => {
+  globalThis.__wsServer.on('connection', (ws: WebSocket, request: IncomingMessage) => {
     const connectionId = randomUUID();
     const clientIp = request.socket.remoteAddress || 'unknown';
 
     console.log(`New WebSocket connection: ${connectionId} from ${clientIp}`);
 
+    // Log readyState after connection
+    console.log(`[WS Debug] Initial readyState for ${connectionId}: ${ws.readyState}`);
+
+    // Add early error listener
+    ws.on('error', (error) => {
+      console.error(`[WS Debug] Early error for ${connectionId}:`, error);
+    });
+
     // Add connection to manager
-    connectionManager!.add(connectionId, ws);
+    globalThis.__connectionManager!.add(connectionId, ws);
+
+    // Log readyState after adding to manager
+    console.log(`[WS Debug] After add readyState for ${connectionId}: ${ws.readyState}`);
 
     // Send initial snapshot
-    broadcaster!.sendSnapshot(connectionId);
+    globalThis.__broadcaster!.sendSnapshot(connectionId);
+
+    // Log readyState after snapshot
+    console.log(`[WS Debug] After snapshot readyState for ${connectionId}: ${ws.readyState}`);
 
     // Handle client messages (handled by ConnectionManager)
   });
@@ -74,21 +99,21 @@ export function initWebSocketServer(server: any): void {
  * Get connection manager instance
  */
 export function getConnectionManager(): ConnectionManager | null {
-  return connectionManager;
+  return globalThis.__connectionManager;
 }
 
 /**
  * Get broadcaster instance
  */
 export function getBroadcaster(): Broadcaster | null {
-  return broadcaster;
+  return globalThis.__broadcaster;
 }
 
 /**
  * Get WebSocket server statistics
  */
 export function getWebSocketStats() {
-  if (!connectionManager || !broadcaster) {
+  if (!globalThis.__connectionManager || !globalThis.__broadcaster) {
     return {
       initialized: false,
       connections: 0
@@ -97,9 +122,9 @@ export function getWebSocketStats() {
 
   return {
     initialized: true,
-    connections: connectionManager.getCount(),
-    connectionStats: connectionManager.getStats(),
-    broadcasterStats: broadcaster.getStats()
+    connections: globalThis.__connectionManager.getCount(),
+    connectionStats: globalThis.__connectionManager.getStats(),
+    broadcasterStats: globalThis.__broadcaster.getStats()
   };
 }
 
@@ -107,26 +132,26 @@ export function getWebSocketStats() {
  * Shutdown WebSocket server
  */
 export function shutdownWebSocketServer(): void {
-  if (!wsServer) return;
+  if (!globalThis.__wsServer) return;
 
   console.log('Shutting down WebSocket server...');
 
   // Shutdown broadcaster
-  if (broadcaster) {
-    broadcaster.shutdown();
-    broadcaster = null;
+  if (globalThis.__broadcaster) {
+    globalThis.__broadcaster.shutdown();
+    globalThis.__broadcaster = null;
   }
 
   // Shutdown connection manager
-  if (connectionManager) {
-    connectionManager.shutdown();
-    connectionManager = null;
+  if (globalThis.__connectionManager) {
+    globalThis.__connectionManager.shutdown();
+    globalThis.__connectionManager = null;
   }
 
   // Close server
-  wsServer.close(() => {
+  globalThis.__wsServer.close(() => {
     console.log('WebSocket server closed');
   });
 
-  wsServer = null;
+  globalThis.__wsServer = null;
 }

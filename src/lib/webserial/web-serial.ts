@@ -39,6 +39,7 @@ class WebSerialConnection {
   private readLoop: Promise<void> | null = null;
   private buffer: Uint8Array = new Uint8Array(0);
   private isReading = false;
+  private _messageCount = 0;
 
   private messageCallbacks: Set<MessageCallback> = new Set();
   private statusCallbacks: Set<StatusCallback> = new Set();
@@ -55,6 +56,13 @@ class WebSerialConnection {
    */
   isConnected(): boolean {
     return this.port !== null && this.isReading;
+  }
+
+  /**
+   * Get number of messages received since connection
+   */
+  getMessageCount(): number {
+    return this._messageCount;
   }
 
   /**
@@ -149,6 +157,7 @@ class WebSerialConnection {
     }
 
     this.buffer = new Uint8Array(0);
+    this._messageCount = 0;
     this.notifyStatus(false);
   }
 
@@ -477,6 +486,23 @@ class WebSerialConnection {
 
   /**
    * Decode FromRadio protobuf message
+   *
+   * FromRadio field numbers (from meshtastic protobuf):
+   *   1: id (uint32)
+   *   2: packet (MeshPacket)
+   *   3: my_info (MyNodeInfo)
+   *   4: node_info (NodeInfo)
+   *   5: config (Config)
+   *   6: log_record (LogRecord)
+   *   7: config_complete_id (uint32)
+   *   8: rebooted (bool)
+   *   9: moduleConfig (ModuleConfig)
+   *  10: channel (Channel)
+   *  11: queueStatus (QueueStatus)
+   *  12: xmodemPacket (XModemPacket)
+   *  13: metadata (DeviceMetadata)
+   *  14: mqttClientProxyMessage
+   *  15: fileInfo (FileInfo)
    */
   private decodeFromRadio(data: Uint8Array): FromRadioMessage {
     // Simple protobuf decoding for FromRadio
@@ -501,16 +527,14 @@ class WebSerialConnection {
         }
 
         if (fieldNum === 1) result.id = value;
-        if (fieldNum === 6) {
+        else if (fieldNum === 7) {
           type = 'configComplete';
           result.configCompleteId = value;
         }
-        if (fieldNum === 7) {
-          type = 'configComplete';
-          result.configCompleteId = value;
-        }
-        if (fieldNum === 8) {
-          // rebooted (bool) - skip
+        else if (fieldNum === 8) {
+          // rebooted (bool)
+          type = 'config';
+          result.rebooted = value !== 0;
         }
       } else if (wireType === 2) {
         // Length-delimited
@@ -535,16 +559,42 @@ class WebSerialConnection {
         } else if (fieldNum === 4) {
           type = 'nodeInfo';
           result.nodeInfo = this.decodeNodeInfo(subData);
-        } else if (fieldNum === 7) {
+        } else if (fieldNum === 5) {
+          // Config (device config)
           type = 'config';
-          result.config = subData;
+          result.config = this.decodeConfigWrapper(subData);
+        } else if (fieldNum === 6) {
+          // LogRecord - treat as config/log
+          type = 'config';
+          result.logRecord = subData;
+        } else if (fieldNum === 9) {
+          // ModuleConfig
+          type = 'config';
+          result.moduleConfig = subData;
         } else if (fieldNum === 10) {
-          // Channel is field 10 in FromRadio protobuf
+          // Channel
           type = 'channel';
           result.channel = this.decodeChannel(subData);
-        } else if (fieldNum === 9) {
+        } else if (fieldNum === 11) {
+          // QueueStatus
+          type = 'config';
+          result.queueStatus = subData;
+        } else if (fieldNum === 12) {
+          // XModemPacket
+          type = 'config';
+          result.xmodemPacket = subData;
+        } else if (fieldNum === 13) {
+          // DeviceMetadata
           type = 'metadata';
-          result.metadata = subData;
+          result.metadata = this.decodeDeviceMetadata(subData);
+        } else if (fieldNum === 14) {
+          // MQTT client proxy
+          type = 'config';
+          result.mqttClientProxy = subData;
+        } else if (fieldNum === 15) {
+          // FileInfo
+          type = 'config';
+          result.fileInfo = subData;
         }
       } else {
         // Skip unknown wire types
@@ -553,6 +603,102 @@ class WebSerialConnection {
     }
 
     return { type, data: result, raw: data };
+  }
+
+  /**
+   * Decode Config wrapper to extract config type
+   */
+  private decodeConfigWrapper(data: Uint8Array): Record<string, unknown> {
+    const result: Record<string, unknown> = {};
+    let offset = 0;
+
+    const configTypes = [
+      'unknown', 'device', 'position', 'power', 'network', 'display',
+      'lora', 'bluetooth', 'security'
+    ];
+
+    while (offset < data.length) {
+      const tag = data[offset++];
+      const fieldNum = tag >> 3;
+      const wireType = tag & 0x07;
+
+      if (wireType === 2) {
+        let len = 0;
+        let shift = 0;
+        while (offset < data.length) {
+          const byte = data[offset++];
+          len |= (byte & 0x7f) << shift;
+          if ((byte & 0x80) === 0) break;
+          shift += 7;
+        }
+
+        const subData = data.slice(offset, offset + len);
+        offset += len;
+
+        result.configType = configTypes[fieldNum] || `config_${fieldNum}`;
+        result.configData = subData;
+      } else {
+        break;
+      }
+    }
+
+    return result;
+  }
+
+  /**
+   * Decode DeviceMetadata
+   */
+  private decodeDeviceMetadata(data: Uint8Array): Record<string, unknown> {
+    const result: Record<string, unknown> = {};
+    let offset = 0;
+
+    while (offset < data.length) {
+      const tag = data[offset++];
+      const fieldNum = tag >> 3;
+      const wireType = tag & 0x07;
+
+      if (wireType === 0) {
+        let value = 0;
+        let shift = 0;
+        while (offset < data.length) {
+          const byte = data[offset++];
+          value |= (byte & 0x7f) << shift;
+          if ((byte & 0x80) === 0) break;
+          shift += 7;
+        }
+
+        if (fieldNum === 2) result.firmwareVersion = value;
+        else if (fieldNum === 3) result.deviceStateVersion = value;
+        else if (fieldNum === 4) result.canShutdown = value !== 0;
+        else if (fieldNum === 5) result.hasWifi = value !== 0;
+        else if (fieldNum === 6) result.hasBluetooth = value !== 0;
+        else if (fieldNum === 7) result.hasEthernet = value !== 0;
+        else if (fieldNum === 8) result.role = value;
+        else if (fieldNum === 9) result.positionFlags = value;
+        else if (fieldNum === 10) result.hwModel = value;
+        else if (fieldNum === 11) result.hasRemoteHardware = value !== 0;
+      } else if (wireType === 2) {
+        let len = 0;
+        let shift = 0;
+        while (offset < data.length) {
+          const byte = data[offset++];
+          len |= (byte & 0x7f) << shift;
+          if ((byte & 0x80) === 0) break;
+          shift += 7;
+        }
+
+        const subData = data.slice(offset, offset + len);
+        offset += len;
+
+        if (fieldNum === 1) {
+          result.firmwareVersionString = new TextDecoder().decode(subData);
+        }
+      } else {
+        break;
+      }
+    }
+
+    return result;
   }
 
   /**
@@ -926,6 +1072,7 @@ class WebSerialConnection {
   }
 
   private notifyMessage(message: FromRadioMessage): void {
+    this._messageCount++;
     this.messageCallbacks.forEach((cb) => cb(message));
   }
 

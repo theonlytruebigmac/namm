@@ -146,7 +146,11 @@ class MeshtasticClient {
 
       return await response.json();
     } catch (error) {
-      console.error("Error fetching device info:", error);
+      // Only log non-ECONNREFUSED errors to avoid spam when no device connected
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      if (!errorMessage.includes('ECONNREFUSED') && !(error instanceof Error && 'cause' in error)) {
+        console.error("Error fetching device info:", error);
+      }
       throw error;
     }
   }

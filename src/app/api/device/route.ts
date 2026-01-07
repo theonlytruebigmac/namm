@@ -32,9 +32,12 @@ export async function GET() {
       device: deviceInfo
     });
   } catch (error) {
-    // Log only once per minute to reduce log spam
-    const errorMessage = error instanceof Error ? error.message : String(error);
-    if (!errorMessage.includes("ECONNREFUSED")) {
+    // Suppress ECONNREFUSED errors - this is expected when no device connected
+    const isConnectionRefused = error instanceof Error &&
+      (error.message.includes("ECONNREFUSED") ||
+       ('cause' in error && String((error as any).cause).includes("ECONNREFUSED")));
+
+    if (!isConnectionRefused) {
       console.error("API Error - GET /api/device:", error);
     }
 

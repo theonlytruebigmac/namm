@@ -32,97 +32,97 @@ export default function MQTTPage() {
   const eventSourceRef = useRef<EventSource | null>(null);
   const pausedMessagesRef = useRef<MQTTMessage[]>([]);
 
+  // Track isPaused in a ref to avoid stale closures
+  const isPausedRef = useRef(isPaused);
   useEffect(() => {
-    // Connect to MQTT stream to receive messages
-    const savedSettings = localStorage.getItem("namm-settings");
+    isPausedRef.current = isPaused;
+  }, [isPaused]);
 
-    if (savedSettings) {
-      const settings = JSON.parse(savedSettings);
-      if (settings.connectionType === "mqtt") {
-        const mqttParams = new URLSearchParams({
-          broker: settings.mqttBroker || "",
-          topic: settings.mqttTopic || "msh/US/#",
-        });
+  // Connect to MQTT SSE stream
+  useEffect(() => {
+    // Build the SSE URL - the /api/mqtt endpoint uses env vars or query params
+    const eventSource = new EventSource('/api/mqtt');
+    eventSourceRef.current = eventSource;
 
-        if (settings.mqttUsername) mqttParams.append("username", settings.mqttUsername);
-        if (settings.mqttPassword) mqttParams.append("password", settings.mqttPassword);
+    eventSource.onopen = () => {
+      console.log('[MQTT Page] SSE connection opened');
+    };
 
-        const url = `/api/mqtt?${mqttParams.toString()}`;
-        const eventSource = new EventSource(url);
-        eventSourceRef.current = eventSource;
+    eventSource.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
 
-        eventSource.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
+        if (data.type === "mqtt.message") {
+          // Convert base64 payload back to Buffer for encrypted messages
+          const payload = data.isBase64
+            ? Buffer.from(data.payload, "base64")
+            : data.payload;
 
-            if (data.type === "mqtt.message") {
-              // Convert base64 payload back to Buffer for encrypted messages
-              const payload = data.isBase64
-                ? Buffer.from(data.payload, "base64")
-                : data.payload;
+          // Use server-side processed result for encrypted messages
+          // Fall back to client-side processing for JSON messages
+          const processed = data.processed || processMQTTMessage(data.topic, payload);
 
-              // Use server-side processed result for encrypted messages (crypto only works on server)
-              // Fall back to client-side processing for JSON messages
-              const processed = data.processed || processMQTTMessage(data.topic, payload);
+          // Extract nodeId based on processed type
+          let nodeId: string | undefined;
+          let processedData: unknown = undefined;
 
-              // Extract nodeId based on processed type
-              let nodeId: string | undefined;
-              let processedData: unknown = undefined;
-
-              if (processed && 'data' in processed && processed.data) {
-                processedData = processed.data;
-                if (typeof processed.data === 'object' && processed.data !== null) {
-                  if ('nodeId' in processed.data) {
-                    nodeId = (processed.data as { nodeId: string }).nodeId;
-                  } else if ('id' in processed.data) {
-                    const id = (processed.data as { id: string | number }).id;
-                    nodeId = typeof id === 'string' ? id : String(id);
-                  } else if ('from' in processed.data) {
-                    nodeId = (processed.data as { from: string }).from;
-                  }
-                }
+          if (processed && 'data' in processed && processed.data) {
+            processedData = processed.data;
+            if (typeof processed.data === 'object' && processed.data !== null) {
+              if ('nodeId' in processed.data) {
+                nodeId = (processed.data as { nodeId: string }).nodeId;
+              } else if ('id' in processed.data) {
+                const id = (processed.data as { id: string | number }).id;
+                nodeId = typeof id === 'string' ? id : String(id);
+              } else if ('from' in processed.data) {
+                nodeId = (processed.data as { from: string }).from;
               }
-
-              // Determine display type
-              const isEncryptedTopic = data.topic.includes("/e/");
-              const isMapTopic = data.topic.includes("/map/");
-              const wasDecrypted = isEncryptedTopic && processedData && !processed.type.includes("error") && !processed.type.includes("failed") && !processed.type.includes("unknown_channel");
-              const displayType = wasDecrypted ? "decrypted" : (
-                isMapTopic && processedData ? "mapreport" :
-                data.topic.includes("/json/") ? "json" :
-                isEncryptedTopic ? "encrypted" :
-                data.topic.includes("/stat/") ? "status" : "unknown"
-              );
-
-              const newMessage: MQTTMessage = {
-                id: Date.now(),
-                topic: data.topic,
-                payload: typeof payload === 'string' ? payload : `[Binary ${payload.length} bytes]`,
-                timestamp: new Date(data.timestamp),
-                type: displayType,
-                parsedType: processed.type,
-                nodeId,
-                data: processedData,
-              };
-
-              setMessages((prev) => {
-                if (isPaused) {
-                  pausedMessagesRef.current = [newMessage, ...pausedMessagesRef.current].slice(0, 100);
-                  return prev;
-                }
-                return [newMessage, ...prev].slice(0, 100);
-              }); // Keep last 100 messages
             }
-          } catch (error) {
-            console.error("Error parsing message:", error);
           }
-        };
 
-        return () => {
-          eventSource.close();
-        };
+          // Determine display type
+          const isEncryptedTopic = data.topic.includes("/e/");
+          const isMapTopic = data.topic.includes("/map/");
+          const wasDecrypted = isEncryptedTopic && processedData && !processed.type.includes("error") && !processed.type.includes("failed") && !processed.type.includes("unknown_channel");
+          const displayType = wasDecrypted ? "decrypted" : (
+            isMapTopic && processedData ? "mapreport" :
+            data.topic.includes("/json/") ? "json" :
+            isEncryptedTopic ? "encrypted" :
+            data.topic.includes("/stat/") ? "status" : "unknown"
+          );
+
+          const newMessage: MQTTMessage = {
+            id: Date.now() + Math.random(),
+            topic: data.topic,
+            payload: typeof payload === 'string' ? payload : `[Binary ${payload.length} bytes]`,
+            timestamp: new Date(data.timestamp),
+            type: displayType,
+            parsedType: processed.type,
+            nodeId,
+            data: processedData,
+          };
+
+          setMessages((prev) => {
+            if (isPausedRef.current) {
+              pausedMessagesRef.current = [newMessage, ...pausedMessagesRef.current].slice(0, 100);
+              return prev;
+            }
+            return [newMessage, ...prev].slice(0, 100);
+          });
+        }
+      } catch (error) {
+        console.error("[MQTT Page] Error parsing SSE message:", error);
       }
-    }
+    };
+
+    eventSource.onerror = (error) => {
+      console.error('[MQTT Page] SSE error:', error);
+    };
+
+    return () => {
+      console.log('[MQTT Page] Closing SSE connection');
+      eventSource.close();
+    };
   }, []);
 
   useEffect(() => {
