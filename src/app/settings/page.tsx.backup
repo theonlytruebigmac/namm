@@ -1,0 +1,353 @@
+"use client";
+
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { ThemeToggle } from "@/components/ui/theme-toggle";
+import {
+  Settings as SettingsIcon,
+  Radio,
+  Bell,
+  Moon,
+  Sun,
+  Globe,
+  Shield,
+  Database,
+  Zap,
+  Info,
+  Github,
+} from "lucide-react";
+import { useState, useEffect } from "react";
+
+export default function SettingsPage() {
+  const [theme, setTheme] = useState<"light" | "dark">("dark");
+
+  useEffect(() => {
+    const root = window.document.documentElement;
+    const initialTheme = root.classList.contains("dark") ? "dark" : "light";
+    setTheme(initialTheme);
+  }, []);
+
+  return (
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-3xl font-bold text-[hsl(var(--foreground))] mb-2">
+          Settings
+        </h1>
+        <p className="text-[hsl(var(--muted-foreground))]">
+          Configure your NAMM application
+        </p>
+      </div>
+
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* Connection Settings */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Radio className="h-5 w-5" />
+              Connection
+            </CardTitle>
+            <CardDescription>Configure mesh network connection</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-[hsl(var(--foreground))]">
+                Connection Type
+              </label>
+              <select className="w-full px-3 py-2 bg-[hsl(var(--muted))] border border-[hsl(var(--border))] rounded-lg text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--primary))]">
+                <option>HTTP API</option>
+                <option>MQTT</option>
+                <option>Serial (USB)</option>
+                <option>Bluetooth LE</option>
+              </select>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-[hsl(var(--foreground))]">
+                API Endpoint
+              </label>
+              <input
+                type="text"
+                placeholder="http://localhost:4413"
+                className="w-full px-3 py-2 bg-[hsl(var(--muted))] border border-[hsl(var(--border))] rounded-lg text-[hsl(var(--foreground))] placeholder:text-[hsl(var(--muted-foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--primary))]"
+              />
+            </div>
+            <div className="flex items-center justify-between p-3 bg-[hsl(var(--muted))] rounded-lg">
+              <div>
+                <div className="text-sm font-medium text-[hsl(var(--foreground))]">
+                  Auto Reconnect
+                </div>
+                <div className="text-xs text-[hsl(var(--muted-foreground))]">
+                  Automatically reconnect on disconnect
+                </div>
+              </div>
+              <Badge variant="success">Enabled</Badge>
+            </div>
+            <Button className="w-full">
+              <Zap className="h-4 w-4 mr-2" />
+              Test Connection
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* Notifications */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Bell className="h-5 w-5" />
+              Notifications
+            </CardTitle>
+            <CardDescription>Manage notification preferences</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between p-3 bg-[hsl(var(--muted))] rounded-lg">
+              <div>
+                <div className="text-sm font-medium text-[hsl(var(--foreground))]">
+                  New Messages
+                </div>
+                <div className="text-xs text-[hsl(var(--muted-foreground))]">
+                  Notify on new mesh messages
+                </div>
+              </div>
+              <Badge variant="success">On</Badge>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-[hsl(var(--muted))] rounded-lg">
+              <div>
+                <div className="text-sm font-medium text-[hsl(var(--foreground))]">
+                  Node Status
+                </div>
+                <div className="text-xs text-[hsl(var(--muted-foreground))]">
+                  Alert when nodes go offline
+                </div>
+              </div>
+              <Badge variant="secondary">Off</Badge>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-[hsl(var(--muted))] rounded-lg">
+              <div>
+                <div className="text-sm font-medium text-[hsl(var(--foreground))]">
+                  Low Battery
+                </div>
+                <div className="text-xs text-[hsl(var(--muted-foreground))]">
+                  Warning when battery below 20%
+                </div>
+              </div>
+              <Badge variant="success">On</Badge>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-[hsl(var(--muted))] rounded-lg">
+              <div>
+                <div className="text-sm font-medium text-[hsl(var(--foreground))]">
+                  Sound
+                </div>
+                <div className="text-xs text-[hsl(var(--muted-foreground))]">
+                  Play sound with notifications
+                </div>
+              </div>
+              <Badge variant="success">On</Badge>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Appearance */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              {theme === "dark" ? <Moon className="h-5 w-5" /> : <Sun className="h-5 w-5" />}
+              Appearance
+            </CardTitle>
+            <CardDescription>Customize the look and feel</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-[hsl(var(--foreground))]">
+                Theme Mode
+              </label>
+              <div className="flex items-center justify-between p-3 bg-[hsl(var(--muted))] rounded-lg">
+                <div className="flex items-center gap-3">
+                  {theme === "dark" ? (
+                    <>
+                      <Moon className="h-5 w-5 text-[hsl(var(--green))]" />
+                      <div>
+                        <div className="text-sm font-medium text-[hsl(var(--foreground))]">Dark Mode</div>
+                        <div className="text-xs text-[hsl(var(--muted-foreground))]">Grey/Green theme</div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <Sun className="h-5 w-5 text-[hsl(var(--green))]" />
+                      <div>
+                        <div className="text-sm font-medium text-[hsl(var(--foreground))]">Light Mode</div>
+                        <div className="text-xs text-[hsl(var(--muted-foreground))]">White/Green theme</div>
+                      </div>
+                    </>
+                  )}
+                </div>
+                <ThemeToggle />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-[hsl(var(--foreground))]">
+                Primary Color
+              </label>
+              <div className="flex items-center gap-2 p-3 bg-[hsl(var(--muted))] rounded-lg">
+                <div className="h-10 w-10 rounded-lg bg-[hsl(var(--green))] flex items-center justify-center ring-2 ring-[hsl(var(--green))] ring-offset-2 ring-offset-[hsl(var(--background))]">
+                  <Radio className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <div className="text-sm font-medium text-[hsl(var(--foreground))]">Meshtastic Green</div>
+                  <div className="text-xs text-[hsl(var(--muted-foreground))]">Default accent color</div>
+                </div>
+              </div>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-[hsl(var(--muted))] rounded-lg">
+              <div>
+                <div className="text-sm font-medium text-[hsl(var(--foreground))]">
+                  Compact Mode
+                </div>
+                <div className="text-xs text-[hsl(var(--muted-foreground))]">
+                  Reduce spacing and padding
+                </div>
+              </div>
+              <Badge variant="secondary">Off</Badge>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Map Settings */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Globe className="h-5 w-5" />
+              Map
+            </CardTitle>
+            <CardDescription>Configure map display options</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium text-[hsl(var(--foreground))]">
+                Default Layer
+              </label>
+              <select className="w-full px-3 py-2 bg-[hsl(var(--muted))] border border-[hsl(var(--border))] rounded-lg text-[hsl(var(--foreground))] focus:outline-none focus:ring-2 focus:ring-[hsl(var(--primary))]">
+                <option>OpenStreetMap</option>
+                <option>Satellite</option>
+                <option>Terrain</option>
+              </select>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-[hsl(var(--muted))] rounded-lg">
+              <div>
+                <div className="text-sm font-medium text-[hsl(var(--foreground))]">
+                  Show Node Labels
+                </div>
+                <div className="text-xs text-[hsl(var(--muted-foreground))]">
+                  Display node names on map
+                </div>
+              </div>
+              <Badge variant="success">On</Badge>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-[hsl(var(--muted))] rounded-lg">
+              <div>
+                <div className="text-sm font-medium text-[hsl(var(--foreground))]">
+                  Cluster Markers
+                </div>
+                <div className="text-xs text-[hsl(var(--muted-foreground))]">
+                  Group nearby nodes
+                </div>
+              </div>
+              <Badge variant="success">On</Badge>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-[hsl(var(--muted))] rounded-lg">
+              <div>
+                <div className="text-sm font-medium text-[hsl(var(--foreground))]">
+                  Auto Center
+                </div>
+                <div className="text-xs text-[hsl(var(--muted-foreground))]">
+                  Follow active node
+                </div>
+              </div>
+              <Badge variant="secondary">Off</Badge>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Privacy & Security */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Shield className="h-5 w-5" />
+              Privacy & Security
+            </CardTitle>
+            <CardDescription>Manage data and security settings</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="flex items-center justify-between p-3 bg-[hsl(var(--muted))] rounded-lg">
+              <div>
+                <div className="text-sm font-medium text-[hsl(var(--foreground))]">
+                  Store Messages
+                </div>
+                <div className="text-xs text-[hsl(var(--muted-foreground))]">
+                  Keep message history locally
+                </div>
+              </div>
+              <Badge variant="success">On</Badge>
+            </div>
+            <div className="flex items-center justify-between p-3 bg-[hsl(var(--muted))] rounded-lg">
+              <div>
+                <div className="text-sm font-medium text-[hsl(var(--foreground))]">
+                  Analytics
+                </div>
+                <div className="text-xs text-[hsl(var(--muted-foreground))]">
+                  Anonymous usage statistics
+                </div>
+              </div>
+              <Badge variant="secondary">Off</Badge>
+            </div>
+            <Button variant="destructive" className="w-full">
+              <Database className="h-4 w-4 mr-2" />
+              Clear All Data
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* About */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Info className="h-5 w-5" />
+              About NAMM
+            </CardTitle>
+            <CardDescription>Application information</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="text-center space-y-2 py-4">
+              <div className="inline-flex h-16 w-16 rounded-xl bg-gradient-to-br from-[hsl(var(--primary))] to-[hsl(var(--green))] items-center justify-center mb-2">
+                <Radio className="h-8 w-8 text-white" />
+              </div>
+              <div className="text-2xl font-bold text-[hsl(var(--foreground))]">NAMM</div>
+              <div className="text-sm text-[hsl(var(--muted-foreground))]">
+                Not Another Meshtastic Monitor
+              </div>
+              <Badge variant="secondary">Version 1.0.0-alpha</Badge>
+            </div>
+            <div className="space-y-2 pt-4 border-t border-[hsl(var(--border))]">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-[hsl(var(--muted-foreground))]">Built with</span>
+                <span className="font-medium text-[hsl(var(--foreground))]">Next.js 15 + React 19</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-[hsl(var(--muted-foreground))]">Theme</span>
+                <span className="font-medium text-[hsl(var(--foreground))]">Grey/Green</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-[hsl(var(--muted-foreground))]">License</span>
+                <span className="font-medium text-[hsl(var(--foreground))]">MIT</span>
+              </div>
+            </div>
+            <Button variant="outline" className="w-full">
+              <Github className="h-4 w-4 mr-2" />
+              View on GitHub
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}

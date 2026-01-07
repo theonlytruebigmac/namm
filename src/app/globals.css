@@ -1,26 +1,249 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@plugin "tailwindcss-animate";
+@import "tw-animate-css";
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+@custom-variant dark (&:is(.dark *));
 
-@media (prefers-color-scheme: dark) {
+@layer base {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    /* Light mode - Clean white/green theme */
+    --background: 0 0% 100%;
+    --foreground: 0 0% 15%;
+
+    --card: 0 0% 98%;
+    --card-foreground: 0 0% 15%;
+
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 15%;
+
+    --primary: 158 64% 52%;  /* Meshtastic green */
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: 0 0% 96%;
+    --secondary-foreground: 0 0% 20%;
+
+    --muted: 0 0% 96%;
+    --muted-foreground: 0 0% 45%;
+
+    --accent: 158 64% 95%;
+    --accent-foreground: 158 64% 25%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 0 0% 90%;
+    --input: 0 0% 90%;
+    --ring: 158 64% 52%;
+
+    /* Additional colors */
+    --green: 158 64% 52%;  /* Meshtastic green */
+    --teal: 174 62% 47%;
+    --blue: 210 100% 56%;
+    --yellow: 45 93% 47%;
+    --red: 0 72% 51%;
+    --text: 0 0% 15%;
+    --subtext0: 0 0% 40%;
+    --subtext1: 0 0% 30%;
+    --surface0: 0 0% 96%;
+    --surface1: 0 0% 93%;
+    --surface2: 0 0% 88%;
+    --mauve: 158 64% 52%;  /* Map to green for compatibility */
+
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    /* Dark mode - Grey/green theme */
+    --background: 220 13% 13%;
+    --foreground: 0 0% 95%;
+
+    --card: 220 13% 16%;
+    --card-foreground: 0 0% 95%;
+
+    --popover: 220 13% 18%;
+    --popover-foreground: 0 0% 95%;
+
+    --primary: 158 64% 52%;  /* Meshtastic green */
+    --primary-foreground: 220 13% 13%;
+
+    --secondary: 220 13% 20%;
+    --secondary-foreground: 0 0% 95%;
+
+    --muted: 220 13% 20%;
+    --muted-foreground: 0 0% 65%;
+
+    --accent: 220 13% 24%;
+    --accent-foreground: 158 64% 52%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 220 13% 24%;
+    --input: 220 13% 24%;
+    --ring: 158 64% 52%;
+
+    /* Additional colors */
+    --green: 158 64% 52%;  /* Meshtastic green */
+    --teal: 174 62% 47%;
+    --blue: 210 80% 60%;
+    --yellow: 45 93% 55%;
+    --red: 0 72% 51%;
+    --text: 0 0% 95%;
+    --subtext0: 0 0% 65%;
+    --subtext1: 0 0% 75%;
+    --surface0: 220 13% 20%;
+    --surface1: 220 13% 24%;
+    --surface2: 220 13% 28%;
+    --mantle: 220 13% 16%;
+    --base: 220 13% 13%;
+    --mauve: 158 64% 52%;  /* Map to green for compatibility */
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Leaflet map overrides */
+.leaflet-container {
+  font-family: inherit;
+}
+
+.leaflet-popup-content-wrapper {
+  background-color: hsl(var(--card));
+  color: hsl(var(--card-foreground));
+  border-radius: calc(var(--radius) - 2px);
+  box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+}
+
+.leaflet-popup-content {
+  margin: 0;
+  min-width: 200px;
+}
+
+.leaflet-popup-tip {
+  background-color: hsl(var(--card));
+}
+
+.leaflet-control {
+  border-radius: var(--radius);
+}
+
+/* Custom marker styles */
+.custom-marker {
+  background: transparent !important;
+  border: none !important;
+}
+
+/* Marker cluster styles */
+.marker-cluster-small {
+  background-color: rgba(34, 197, 94, 0.6);
+}
+
+.marker-cluster-small div {
+  background-color: rgba(34, 197, 94, 0.8);
+  color: white;
+  font-weight: bold;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  width: 40px;
+  height: 40px;
+}
+
+.marker-cluster-medium {
+  background-color: rgba(59, 130, 246, 0.6);
+}
+
+.marker-cluster-medium div {
+  background-color: rgba(59, 130, 246, 0.8);
+  color: white;
+  font-weight: bold;
+  font-size: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  width: 50px;
+  height: 50px;
+}
+
+.marker-cluster-large {
+  background-color: rgba(168, 85, 247, 0.6);
+}
+
+.marker-cluster-large div {
+  background-color: rgba(168, 85, 247, 0.8);
+  color: white;
+  font-weight: bold;
+  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  width: 60px;
+  height: 60px;
+}
+
+.marker-cluster {
+  border-radius: 50%;
+  box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.7;
+  }
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 8px);
+  --radius-3xl: calc(var(--radius) + 12px);
+  --radius-4xl: calc(var(--radius) + 16px);
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-chart-1: hsl(var(--primary));
+  --color-chart-2: hsl(var(--teal));
+  --color-chart-3: hsl(var(--blue));
+  --color-chart-4: hsl(var(--yellow));
+  --color-chart-5: hsl(var(--red));
+  --color-sidebar: hsl(var(--background));
+  --color-sidebar-foreground: hsl(var(--foreground));
+  --color-sidebar-primary: hsl(var(--primary));
+  --color-sidebar-primary-foreground: hsl(var(--primary-foreground));
+  --color-sidebar-accent: hsl(var(--accent));
+  --color-sidebar-accent-foreground: hsl(var(--accent-foreground));
+  --color-sidebar-border: hsl(var(--border));
+  --color-sidebar-ring: hsl(var(--ring));
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
 }

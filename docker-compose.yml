@@ -1,0 +1,76 @@
+# Docker Compose for NAMM
+# Supports both MQTT and Serial connections
+#
+# Usage:
+#   MQTT:   docker compose up -d
+#   Serial: SERIAL_PORT=/dev/ttyUSB0 docker compose up -d
+#
+# For serial, first:
+#   1. Plug in your Meshtastic device
+#   2. Find the port: ls /dev/ttyUSB* /dev/ttyACM*
+#   3. sudo usermod -aG dialout $USER
+
+services:
+  namm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: namm:latest
+    container_name: namm
+    ports:
+      - "${PORT:-3002}:3000"
+    volumes:
+      - namm-data:/app/data
+      - namm-logs:/app/logs
+    # Serial device passthrough - uncomment and set your device path
+    # devices:
+    #   - "/dev/ttyACM0:/dev/ttyACM0"
+    #   - "/dev/ttyUSB0:/dev/ttyUSB0"
+    deploy:
+      resources:
+        limits:
+          memory: 8G
+        reservations:
+          memory: 4G
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATABASE_PATH=/app/data/namm.db
+      # # MQTT settings (leave MQTT_BROKER empty to disable)
+      # - MQTT_BROKER=${MQTT_BROKER:-mqtt://mqtt.meshtastic.org:1883}
+      # - MQTT_USERNAME=${MQTT_USERNAME:-meshdev}
+      # - MQTT_PASSWORD=${MQTT_PASSWORD:-large4cats}
+      # - MQTT_TOPIC=${MQTT_TOPIC:-msh/US/KY/#}
+      # # Serial settings
+      # - SERIAL_PORT=${SERIAL_PORT:-}
+      # - SERIAL_BAUD_RATE=${SERIAL_BAUD_RATE:-115200}
+      # General
+      - DATA_RETENTION_DAYS=${DATA_RETENTION_DAYS:-30}
+      - NEXT_TELEMETRY_DISABLED=1
+      - NEXT_PUBLIC_USE_REAL_API=true
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/api/health', (r) => {process.exit(r.statusCode === 200 ? 0 : 1)})"]
+      interval: 30s
+      timeout: 3s
+      start_period: 40s
+      retries: 3
+    networks:
+      - namm-network
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    group_add:
+      - dialout
+
+volumes:
+  namm-data:
+    driver: local
+  namm-logs:
+    driver: local
+
+networks:
+  namm-network:
+    driver: bridge
