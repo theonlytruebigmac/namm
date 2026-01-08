@@ -100,9 +100,11 @@ export function useNodeUpdates() {
   const queryClient = useQueryClient();
 
   useSSEEvent<Node>("node.update", (node) => {
-    // Update the nodes cache
+    // Update the nodes cache - only if we have existing data
+    // This prevents race conditions where SSE updates arrive before initial API fetch
     queryClient.setQueryData(["nodes"], (oldData: Node[] | undefined) => {
-      if (!oldData) return [node];
+      // Don't set data if cache is empty - let the API fill it first
+      if (!oldData || oldData.length === 0) return oldData;
 
       const index = oldData.findIndex((n) => n.id === node.id);
       if (index >= 0) {
@@ -119,9 +121,10 @@ export function useNodeUpdates() {
   });
 
   useSSEEvent<Node>("node.new", (node) => {
-    // Add new node to cache
+    // Add new node to cache - only if we have existing data
     queryClient.setQueryData(["nodes"], (oldData: Node[] | undefined) => {
-      if (!oldData) return [node];
+      // Don't set data if cache is empty - let the API fill it first
+      if (!oldData || oldData.length === 0) return oldData;
 
       // Check if node already exists
       const exists = oldData.some((n) => n.id === node.id);

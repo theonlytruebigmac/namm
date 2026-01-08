@@ -13,32 +13,45 @@ export class NodeRepository {
 
   /**
    * Upsert a node (insert or update if exists)
-   * Handles conflicts on both id and node_num
+   * Handles conflicts on both id and node_num by migrating related data
+   * instead of deleting (which would cascade delete positions, telemetry, etc.)
    */
   upsert(node: ProcessedNodeInfo): Database.RunResult {
-    // First, check if a node with this node_num already exists with a different id
-    // This can happen when node IDs change but node_num stays the same
+    // Check if a node with this node_num already exists with a different id
+    // This can happen when different sources (MQTT vs Serial) format node IDs differently
     const existingByNodeNum = this.db.prepare(
       'SELECT id FROM nodes WHERE node_num = ? AND id != ?'
     ).get(node.nodeNum, node.id) as { id: string } | undefined;
 
     if (existingByNodeNum) {
-      // Delete the old record first, then we can insert the new one
-      // This handles the case where node_num stays the same but id changes
-      this.db.prepare('DELETE FROM nodes WHERE node_num = ?').run(node.nodeNum);
+      const oldId = existingByNodeNum.id;
+      // Migrate all related records to use the new node_id instead of deleting
+      // This preserves positions, telemetry, messages, etc.
+      this.db.prepare('UPDATE positions SET node_id = ? WHERE node_id = ?').run(node.id, oldId);
+      this.db.prepare('UPDATE telemetry SET node_id = ? WHERE node_id = ?').run(node.id, oldId);
+      this.db.prepare('UPDATE neighbors SET node_id = ? WHERE node_id = ?').run(node.id, oldId);
+      this.db.prepare('UPDATE neighbors SET neighbor_id = ? WHERE neighbor_id = ?').run(node.id, oldId);
+      this.db.prepare('UPDATE messages SET from_id = ? WHERE from_id = ?').run(node.id, oldId);
+      this.db.prepare('UPDATE messages SET to_id = ? WHERE to_id = ?').run(node.id, oldId);
+      this.db.prepare('UPDATE favorites SET node_id = ? WHERE node_id = ?').run(node.id, oldId);
+      this.db.prepare('UPDATE traceroutes SET from_id = ? WHERE from_id = ?').run(node.id, oldId);
+      this.db.prepare('UPDATE traceroutes SET to_id = ? WHERE to_id = ?').run(node.id, oldId);
+      // Now safe to delete the old node record (related data already migrated)
+      this.db.prepare('DELETE FROM nodes WHERE id = ?').run(oldId);
     }
 
-    // Also check if a node with this id already exists with a different node_num
+    // Check if a node with this id already exists with a different node_num
+    // This would be unusual but handle it by updating the node_num
     const existingById = this.db.prepare(
       'SELECT node_num FROM nodes WHERE id = ? AND node_num != ?'
     ).get(node.id, node.nodeNum) as { node_num: number } | undefined;
 
     if (existingById) {
-      // Delete the old record - the node_num is more reliable as the identifier
-      this.db.prepare('DELETE FROM nodes WHERE id = ?').run(node.id);
+      // Update the existing record's node_num rather than deleting
+      this.db.prepare('UPDATE nodes SET node_num = ? WHERE id = ?').run(node.nodeNum, node.id);
     }
 
-    // Now we can safely upsert - any conflicting records have been removed
+    // Now we can safely upsert
     const stmt = this.db.prepare(`
       INSERT INTO nodes (
         id, node_num, short_name, long_name, hw_model, role,

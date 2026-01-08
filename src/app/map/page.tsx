@@ -182,15 +182,39 @@ export default function MapPage() {
 
   // Use enhanced coverage from API if available, fallback to local calculation
   const coverage = useMemo(() => {
-    if (coverageData?.coverage) {
-      return coverageData.coverage;
+    try {
+      if (coverageData?.coverage) {
+        return coverageData.coverage;
+      }
+      // Fallback to local calculation (no traceroute/message data)
+      const baseCoverage = estimateCoverage(nodes || []);
+      return {
+        ...baseCoverage,
+        connectivity: undefined,
+        linkDistances: undefined,
+      };
+    } catch (error) {
+      console.error("Coverage calculation error:", error);
+      // Return safe defaults
+      return {
+        environment: "suburban" as const,
+        environmentConfidence: 0,
+        totalCoverageKm2: 0,
+        effectiveRadiusKm: 0,
+        perNodeCoverageKm2: 0,
+        networkSpanKm: 0,
+        analysis: {
+          avgNodeSpacingKm: 0,
+          avgSnr: null,
+          routerCount: 0,
+          mobileNodeCount: 0,
+          inferenceMethod: "error",
+        },
+        recommendations: [],
+        connectivity: undefined,
+        linkDistances: undefined,
+      };
     }
-    // Fallback to local calculation (no traceroute/message data)
-    return {
-      ...estimateCoverage(nodes || []),
-      connectivity: undefined,
-      linkDistances: undefined,
-    };
   }, [nodes, coverageData]);
 
   // Get connectivity data from API
@@ -332,7 +356,7 @@ export default function MapPage() {
         <StatCard
           title="Nodes on Map"
           value={nodesWithPosition.length}
-          description={`of ${nodes?.length || 0} total (${coverage.analysis.routerCount} routers)`}
+          description={`of ${nodes?.length || 0} total (${coverage.analysis?.routerCount ?? 0} routers)`}
           icon={MapPin}
           color="green"
         />
@@ -352,7 +376,7 @@ export default function MapPage() {
             <div>
               <StatCard
                 title="Environment"
-                value={coverage.environment.replace("-", " ").replace(/\b\w/g, l => l.toUpperCase())}
+                value={String(coverage.environment || "unknown").replace("-", " ").replace(/\b\w/g, l => l.toUpperCase())}
                 description={`${getExpectedRange(coverage.environment)}`}
                 icon={Globe}
                 color="yellow"
@@ -363,12 +387,12 @@ export default function MapPage() {
             <div className="space-y-1 text-xs">
               <div className="font-semibold">{getEnvironmentDescription(coverage.environment)}</div>
               <div className="text-muted-foreground">
-                Inferred from: {coverage.analysis.inferenceMethod}
+                Inferred from: {String(coverage.analysis?.inferenceMethod ?? "unknown")}
               </div>
               <div className="text-muted-foreground">
-                Confidence: {Math.round(coverage.environmentConfidence * 100)}%
+                Confidence: {Math.round((coverage.environmentConfidence ?? 0) * 100)}%
               </div>
-              {coverage.analysis.avgSnr !== null && (
+              {coverage.analysis?.avgSnr != null && typeof coverage.analysis.avgSnr === "number" && (
                 <div className="text-muted-foreground">
                   Avg SNR: {coverage.analysis.avgSnr.toFixed(1)} dB
                 </div>
@@ -396,8 +420,8 @@ export default function MapPage() {
               <div>
                 <StatCard
                   title="Confirmed Links"
-                  value={coverage.connectivity.confirmedLinks}
-                  description={`${coverage.connectivity.avgLinksPerNode} avg per node`}
+                  value={coverage.connectivity.confirmedLinks ?? 0}
+                  description={`${coverage.connectivity.avgLinksPerNode ?? 0} avg per node`}
                   icon={Link2}
                   color="green"
                 />
@@ -412,10 +436,10 @@ export default function MapPage() {
                 {coverage.linkDistances && coverage.linkDistances.measuredLinks > 0 && (
                   <>
                     <div className="text-muted-foreground">
-                      Avg link distance: {coverage.linkDistances.avg} km
+                      Avg link distance: {coverage.linkDistances.avg ?? 0} km
                     </div>
                     <div className="text-muted-foreground">
-                      Max link: {coverage.linkDistances.max} km
+                      Max link: {coverage.linkDistances.max ?? 0} km
                     </div>
                   </>
                 )}
@@ -425,14 +449,14 @@ export default function MapPage() {
 
           <StatCard
             title="Mesh Connectivity"
-            value={`${Math.round(coverage.connectivity.networkConnectivity * 100)}%`}
-            description={coverage.connectivity.networkConnectivity >= 0.8
+            value={`${Math.round((coverage.connectivity.networkConnectivity ?? 0) * 100)}%`}
+            description={(coverage.connectivity.networkConnectivity ?? 0) >= 0.8
               ? "Well connected"
-              : coverage.connectivity.networkConnectivity >= 0.5
+              : (coverage.connectivity.networkConnectivity ?? 0) >= 0.5
                 ? "Partially connected"
                 : "Fragmented"}
             icon={Network}
-            color={coverage.connectivity.networkConnectivity >= 0.7 ? "green" : "yellow"}
+            color={(coverage.connectivity.networkConnectivity ?? 0) >= 0.7 ? "green" : "yellow"}
           />
 
           <Tooltip>
@@ -440,8 +464,8 @@ export default function MapPage() {
               <div>
                 <StatCard
                   title="Hub Nodes"
-                  value={coverage.connectivity.hubNodes.length}
-                  description={coverage.connectivity.hubNodes.length > 0
+                  value={Array.isArray(coverage.connectivity.hubNodes) ? coverage.connectivity.hubNodes.length : 0}
+                  description={Array.isArray(coverage.connectivity.hubNodes) && coverage.connectivity.hubNodes.length > 0
                     ? "High-connectivity relays"
                     : "No hubs detected"}
                   icon={Radio}
@@ -449,7 +473,7 @@ export default function MapPage() {
                 />
               </div>
             </TooltipTrigger>
-            {graph && graph.hubNodes.length > 0 && (
+            {graph && Array.isArray(graph.hubNodes) && graph.hubNodes.length > 0 && (
               <TooltipContent side="bottom" className="max-w-xs">
                 <div className="space-y-1 text-xs">
                   <div className="font-semibold">Network Hub Nodes</div>
@@ -459,7 +483,7 @@ export default function MapPage() {
                   <div className="font-mono text-muted-foreground">
                     {graph.hubNodes.slice(0, 5).map(id => {
                       const node = nodes.find(n => n.id === id);
-                      return node?.shortName || id.slice(0, 8);
+                      return node?.shortName || String(id).slice(0, 8);
                     }).join(", ")}
                     {graph.hubNodes.length > 5 && ` +${graph.hubNodes.length - 5} more`}
                   </div>
@@ -473,12 +497,12 @@ export default function MapPage() {
               <div>
                 <StatCard
                   title="Coverage Overlap"
-                  value={`${coverage.connectivity.overlappingCoverage}%`}
-                  description={coverage.connectivity.overlappingCoverage >= 50
+                  value={`${coverage.connectivity.overlappingCoverage ?? 0}%`}
+                  description={(coverage.connectivity.overlappingCoverage ?? 0) >= 50
                     ? "Good redundancy"
                     : "Limited overlap"}
                   icon={Layers}
-                  color={coverage.connectivity.overlappingCoverage >= 40 ? "green" : "default"}
+                  color={(coverage.connectivity.overlappingCoverage ?? 0) >= 40 ? "green" : "default"}
                 />
               </div>
             </TooltipTrigger>
@@ -489,7 +513,7 @@ export default function MapPage() {
                   Percentage of node pairs that share common neighbors.
                   Higher overlap = better mesh redundancy.
                 </div>
-                {graph && graph.bridgeNodes.length > 0 && (
+                {graph && Array.isArray(graph.bridgeNodes) && graph.bridgeNodes.length > 0 && (
                   <div className="text-yellow-500">
                     ⚠ {graph.bridgeNodes.length} bridge node(s) - single points of failure
                   </div>
@@ -501,7 +525,7 @@ export default function MapPage() {
       )}
 
       {/* Coverage Recommendations */}
-      {coverage.recommendations.length > 0 && (
+      {Array.isArray(coverage.recommendations) && coverage.recommendations.length > 0 && (
         <Card className="border-yellow-500/30 bg-yellow-500/5">
           <CardContent className="py-3">
             <div className="flex items-start gap-2">
@@ -509,7 +533,7 @@ export default function MapPage() {
               <div className="text-sm">
                 <span className="font-medium text-yellow-500">Coverage Tips: </span>
                 <span className="text-muted-foreground">
-                  {coverage.recommendations.join(" • ")}
+                  {coverage.recommendations.map(r => String(r)).join(" • ")}
                 </span>
               </div>
             </div>

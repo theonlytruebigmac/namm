@@ -173,9 +173,10 @@ export function parseMQTTPayload(payload: string): MQTTPacket | null {
 
 /**
  * Convert node number to hex ID format (!xxxxxxxx)
+ * Uses unsigned conversion (>>> 0) because node numbers are uint32 in Meshtastic
  */
 export function nodeNumToId(nodeNum: number): string {
-  return `!${nodeNum.toString(16).padStart(8, "0")}`;
+  return `!${(nodeNum >>> 0).toString(16).padStart(8, "0")}`;
 }
 
 /**

@@ -129,6 +129,7 @@ async function handleMyInfo(myInfo: Record<string, unknown>) {
 
   const { nodeRepo } = getRepos();
   const num = myInfo.myNodeNum as number;
+  // Use unsigned conversion - node numbers are uint32 in Meshtastic
   const nodeId = `!${(num >>> 0).toString(16).padStart(8, '0')}`;
 
   // Create or update our own node entry
@@ -169,7 +170,8 @@ async function handleNodeInfo(nodeInfo: Record<string, unknown>) {
   const num = nodeInfo.num as number;
   const user = nodeInfo.user as Record<string, unknown> | undefined;
 
-  const nodeId = `!${num.toString(16).padStart(8, '0')}`;
+  // Use unsigned conversion - node numbers are uint32 in Meshtastic
+  const nodeId = `!${(num >>> 0).toString(16).padStart(8, '0')}`;
 
   const nodeData: ProcessedNodeInfo = {
     id: nodeId,
