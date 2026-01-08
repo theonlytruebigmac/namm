@@ -8,12 +8,12 @@ import {
 
 const defaultSettings: AppSettings = {
   connectionType: 'http',
-  apiEndpoint: 'http://localhost:4403',
+  apiEndpoint: '',
   autoReconnect: true,
-  mqttBroker: 'mqtt://mqtt.meshtastic.org:1883',
-  mqttUsername: 'meshdev',
-  mqttPassword: 'large4cats',
-  mqttTopic: 'msh/US/#',
+  mqttBroker: '',
+  mqttUsername: '',
+  mqttPassword: '',
+  mqttTopic: '',
   mqttUseTLS: false,
   notifyNewMessages: true,
   notifyNodeStatus: false,

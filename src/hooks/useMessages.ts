@@ -1,13 +1,13 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { getChannelMessages, getDirectMessages, sendMessage, addReaction, markChannelAsRead, searchMessages } from "@/lib/api";
-import { useWebSocketEvent } from "./useWebSocket";
+import { useSSEEvent } from "./useSSE";
 
 export function useChannelMessages(channel: number) {
   const queryClient = useQueryClient();
 
-  // Subscribe to real-time message updates
-  useWebSocketEvent("message.new", (data: { channel?: number } | null) => {
+  // Subscribe to real-time message updates via SSE
+  useSSEEvent("message.new", (data: { channel?: number } | null) => {
     // Check if message is for this channel
     if (data && data.channel === channel) {
       // Invalidate to refetch with new message
@@ -18,7 +18,7 @@ export function useChannelMessages(channel: number) {
   return useQuery({
     queryKey: ["messages", "channel", channel],
     queryFn: () => getChannelMessages(channel),
-    refetchInterval: 30000, // Reduce polling since we have WebSocket
+    refetchInterval: 30000, // Reduce polling since we have SSE
     staleTime: 5000,
   });
 }
@@ -26,8 +26,8 @@ export function useChannelMessages(channel: number) {
 export function useDirectMessages(nodeA: string | null, nodeB: string | null) {
   const queryClient = useQueryClient();
 
-  // Subscribe to real-time message updates
-  useWebSocketEvent("message.new", (data: { fromId?: string; toId?: string } | null) => {
+  // Subscribe to real-time message updates via SSE
+  useSSEEvent("message.new", (data: { fromId?: string; toId?: string } | null) => {
     // Check if message is between these two nodes
     if (data && nodeA && nodeB) {
       const isRelevant =

@@ -1,24 +1,27 @@
 "use client";
 
-import { useRealtimeUpdates } from "@/hooks/useWebSocket";
+import { useRealtimeUpdates, useSSE } from "@/hooks/useSSE";
 import { useEffect, useState } from "react";
 
 /**
- * Inner component that uses WebSocket hooks
+ * Inner component that manages SSE connection
  */
-function WebSocketManager() {
+function SSEManager() {
+  useSSE(true); // Auto-connect
   useRealtimeUpdates();
   return null;
 }
 
 /**
- * WebSocket Provider
- * 
- * Initializes WebSocket connection and enables real-time updates for:
+ * Realtime Provider (SSE-based)
+ *
+ * Initializes SSE connection and enables real-time updates for:
  * - Node updates (new nodes, position changes)
  * - Message updates (new messages)
  * - Device statistics
  * - Connection status
+ *
+ * @deprecated - exported as WebSocketProvider for backwards compatibility
  */
 export function WebSocketProvider({ children }: { children: React.ReactNode }) {
   const [isClient, setIsClient] = useState(false);
@@ -29,8 +32,11 @@ export function WebSocketProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <>
-      {isClient && <WebSocketManager />}
+      {isClient && <SSEManager />}
       {children}
     </>
   );
 }
+
+// Also export as SSEProvider for new code
+export { WebSocketProvider as SSEProvider };

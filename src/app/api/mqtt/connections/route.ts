@@ -12,7 +12,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import mqtt, { type MqttClient } from "mqtt";
 import { processMQTTMessage } from "@/lib/mqtt-processor";
-import { getBroadcaster } from "@/lib/websocket";
+import { getSSEBroadcaster } from "@/lib/sse";
 import { getDatabase } from "@/lib/db";
 import { NodeRepository } from "@/lib/db/repositories/nodes";
 import { MessageRepository } from "@/lib/db/repositories/messages";
@@ -70,7 +70,7 @@ function handleMQTTMessage(connectionId: string, topic: string, payload: Buffer)
       return;
     }
 
-    const broadcaster = getBroadcaster();
+    const broadcaster = getSSEBroadcaster();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data = ('data' in result && result.data) ? result.data as any : null;
 

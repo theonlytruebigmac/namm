@@ -21,6 +21,10 @@ export async function GET() {
     const messageRepo = new MessageRepository(db);
     const channelRepo = new ChannelRepository(db);
 
+    // Get unread counts by channel
+    const unreadByChannel = messageRepo.getUnreadCountByChannel();
+    const unreadMap = new Map(unreadByChannel.map(u => [u.channel, u.count]));
+
     // Get unique channels from messages
     const channelsQuery = db.prepare(`
       SELECT DISTINCT channel, COUNT(*) as message_count
@@ -56,7 +60,7 @@ export async function GET() {
         name: ch.name,
         role: ch.role || (ch.id === 0 ? 1 : 2),
         messageCount: 0,
-        unreadCount: 0,
+        unreadCount: unreadMap.get(ch.id) || 0,
         hasKey: ch.has_key === 1 || ch.id === 0,
       });
     }
@@ -69,7 +73,7 @@ export async function GET() {
         name: dc.name || existing?.name || getDefaultChannelName(dc.index),
         role: dc.role || existing?.role || (dc.index === 0 ? 1 : 2),
         messageCount: existing?.messageCount || 0,
-        unreadCount: 0,
+        unreadCount: unreadMap.get(dc.index) || 0,
         hasKey: dc.hasKey || existing?.hasKey || false,
       });
     }
@@ -82,7 +86,7 @@ export async function GET() {
           name: mapping.name,
           role: mapping.index === 0 ? 1 : 2,
           messageCount: 0,
-          unreadCount: 0,
+          unreadCount: unreadMap.get(mapping.index) || 0,
           hasKey: mapping.index === 0, // Primary uses default key
         });
       }
@@ -101,7 +105,7 @@ export async function GET() {
           name: learnedName || getDefaultChannelName(row.channel),
           role: row.channel === 0 ? 1 : 2,
           messageCount: row.message_count,
-          unreadCount: 0,
+          unreadCount: unreadMap.get(row.channel) || 0,
           hasKey: false,
         });
       }
@@ -115,7 +119,7 @@ export async function GET() {
         name: primaryName,
         role: 1,
         messageCount: 0,
-        unreadCount: 0,
+        unreadCount: unreadMap.get(0) || 0,
         hasKey: true, // Default LongFast key is known
       });
     }

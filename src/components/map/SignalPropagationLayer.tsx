@@ -72,9 +72,9 @@ function SignalRings({ node, maxDistanceKm = 10 }: { node: Node; maxDistanceKm?:
 
   return (
     <>
-      {rings.map((ring) => (
+      {rings.map((ring, index) => (
         <Circle
-          key={ring.distance}
+          key={`${node.id}-ring-${index}`}
           center={center}
           radius={ring.distance * 1000} // Convert km to meters
           pathOptions={{

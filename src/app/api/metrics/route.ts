@@ -6,7 +6,7 @@
 
 import { NextResponse } from 'next/server';
 import { getMQTTWorker } from '@/lib/worker/mqtt-worker';
-import { getWebSocketStats } from '@/lib/websocket';
+import { getSSEStats } from '@/lib/sse';
 import { getDatabaseStats } from '@/lib/db';
 import { getCacheStats } from '@/lib/cache/hot-cache';
 
@@ -23,8 +23,8 @@ export async function GET() {
       // Worker not initialized
     }
 
-    // Get WebSocket stats
-    const wsStats = getWebSocketStats();
+    // Get SSE stats
+    const sseStats = getSSEStats();
 
     // Get database stats
     const dbStats = getDatabaseStats();
@@ -58,10 +58,12 @@ export async function GET() {
           : 0, // msgs/sec
         health: workerHealth?.status || 'unknown'
       } : null,
-      websocket: wsStats.initialized ? {
-        connections: wsStats.connections,
-        stats: wsStats.connectionStats,
-        broadcaster: wsStats.broadcasterStats
+      sse: sseStats.initialized ? {
+        clients: sseStats.clients,
+        pendingNodes: 'pendingNodes' in sseStats ? sseStats.pendingNodes : 0,
+        pendingPositions: 'pendingPositions' in sseStats ? sseStats.pendingPositions : 0,
+        pendingTelemetry: 'pendingTelemetry' in sseStats ? sseStats.pendingTelemetry : 0,
+        pendingMessages: 'pendingMessages' in sseStats ? sseStats.pendingMessages : 0
       } : null,
       database: {
         size: dbStats.size,

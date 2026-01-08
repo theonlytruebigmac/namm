@@ -1,13 +1,16 @@
 /**
  * Custom Server Entry Point
  *
- * Initializes WebSocket server and MQTT worker alongside Next.js server
+ * Initializes MQTT worker alongside Next.js server
+ *
+ * Note: WebSocket has been replaced with SSE (Server-Sent Events)
+ * which works natively with Next.js - no custom server needed for real-time.
+ * This custom server is only needed for the background MQTT worker.
  */
 
 import { createServer } from 'http';
 import { parse } from 'url';
 import next from 'next';
-import { initWebSocketServer } from './src/lib/websocket';
 import { getMQTTWorker } from './src/lib/worker/mqtt-worker';
 
 const dev = process.env.NODE_ENV !== 'production';
@@ -30,9 +33,6 @@ app.prepare().then(() => {
       res.end('Internal server error');
     }
   });
-
-  // Initialize WebSocket server
-  initWebSocketServer(server);
 
   // Auto-start MQTT worker if configured
   if (process.env.MQTT_BROKER) {

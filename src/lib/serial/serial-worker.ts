@@ -9,7 +9,7 @@
 import { SerialPort } from 'serialport';
 import { getDatabase } from '@/lib/db';
 import { BatchWriter } from '@/lib/worker/batch-writer';
-import { getBroadcaster } from '@/lib/websocket';
+import { getSSEBroadcaster } from '@/lib/sse';
 import { SerialFrameAccumulator } from './serial-protocol';
 import { decodeFromRadio, processFromRadioPacket, nodeNumToId } from './fromradio-decoder';
 import type {
@@ -274,7 +274,7 @@ export class SerialWorker {
    * Broadcast update to WebSocket clients
    */
   private broadcastUpdate(data: ProcessedData): void {
-    const broadcaster = getBroadcaster();
+    const broadcaster = getSSEBroadcaster();
     if (!broadcaster) return;
 
     try {

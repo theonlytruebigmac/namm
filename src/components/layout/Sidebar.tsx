@@ -25,21 +25,47 @@ import {
   Usb,
 } from "lucide-react";
 
-const navigation = [
-  { name: "Dashboard", href: "/", icon: Home },
-  { name: "Network", href: "/network", icon: Network },
-  { name: "Messages", href: "/messages", icon: MessageSquare },
-  { name: "Nodes", href: "/nodes", icon: Radio },
-  { name: "Compare", href: "/compare", icon: GitCompare },
-  { name: "Map", href: "/map", icon: Map },
-  { name: "Traceroutes", href: "/traceroutes", icon: Route },
-  { name: "MQTT", href: "/mqtt", icon: Zap },
-  { name: "Serial", href: "/serial", icon: Usb },
-  { name: "Telemetry", href: "/telemetry", icon: Activity },
-  { name: "Captures", href: "/captures", icon: FileAudio },
-  { name: "Alerts", href: "/alerts", icon: Bell },
-  { name: "Connections", href: "/connections", icon: Cable },
-  { name: "Settings", href: "/settings", icon: Settings },
+// Navigation sections for better organization
+const navigationSections = [
+  {
+    name: "Network",
+    items: [
+      { name: "Dashboard", href: "/", icon: Home },
+      { name: "Nodes", href: "/nodes", icon: Radio },
+      { name: "Map", href: "/map", icon: Map },
+      { name: "Topology", href: "/network", icon: Network },
+    ],
+  },
+  {
+    name: "Data",
+    items: [
+      { name: "Messages", href: "/messages", icon: MessageSquare },
+      { name: "Telemetry", href: "/telemetry", icon: Activity },
+      { name: "Traceroutes", href: "/traceroutes", icon: Route },
+    ],
+  },
+  {
+    name: "Tools",
+    items: [
+      { name: "Compare", href: "/compare", icon: GitCompare },
+      { name: "Captures", href: "/captures", icon: FileAudio },
+    ],
+  },
+  {
+    name: "Connections",
+    items: [
+      { name: "MQTT", href: "/mqtt", icon: Zap },
+      { name: "Serial", href: "/serial", icon: Usb },
+      { name: "Servers", href: "/connections", icon: Cable },
+    ],
+  },
+  {
+    name: "System",
+    items: [
+      { name: "Alerts", href: "/alerts", icon: Bell },
+      { name: "Settings", href: "/settings", icon: Settings },
+    ],
+  },
 ];
 
 interface NavItemProps {
@@ -55,7 +81,7 @@ const NavItem = memo(function NavItem({ name, href, icon: Icon, isActive }: NavI
       <Link
         href={href}
         className={cn(
-          "group flex gap-x-3 rounded-md p-2 text-sm leading-6 font-semibold transition-colors",
+          "group flex gap-x-3 rounded-md px-2 py-1.5 text-sm font-medium transition-colors",
           isActive
             ? "bg-[hsl(var(--accent))] text-[hsl(var(--primary))]"
             : "text-[hsl(var(--muted-foreground))] hover:text-[hsl(var(--foreground))] hover:bg-[hsl(var(--muted))]"
@@ -63,7 +89,7 @@ const NavItem = memo(function NavItem({ name, href, icon: Icon, isActive }: NavI
       >
         <Icon
           className={cn(
-            "h-6 w-6 shrink-0",
+            "h-5 w-5 shrink-0",
             isActive
               ? "text-[hsl(var(--primary))]"
               : "text-[hsl(var(--muted-foreground))] group-hover:text-[hsl(var(--foreground))]"
@@ -95,20 +121,25 @@ export function Sidebar() {
 
         {/* Navigation */}
         <nav className="flex flex-1 flex-col">
-          <ul role="list" className="flex flex-1 flex-col gap-y-7">
-            <li>
-              <ul role="list" className="-mx-2 space-y-1">
-                {navigation.map((item) => (
-                  <NavItem
-                    key={item.name}
-                    name={item.name}
-                    href={item.href}
-                    icon={item.icon}
-                    isActive={pathname === item.href}
-                  />
-                ))}
-              </ul>
-            </li>
+          <ul role="list" className="flex flex-1 flex-col gap-y-1">
+            {navigationSections.map((section) => (
+              <li key={section.name} className="mt-4 first:mt-0">
+                <div className="text-[10px] font-medium text-[hsl(var(--muted-foreground)/0.6)] uppercase tracking-widest px-2 mb-1">
+                  {section.name}
+                </div>
+                <ul role="list" className="-mx-2 space-y-0.5">
+                  {section.items.map((item) => (
+                    <NavItem
+                      key={item.name}
+                      name={item.name}
+                      href={item.href}
+                      icon={item.icon}
+                      isActive={pathname === item.href}
+                    />
+                  ))}
+                </ul>
+              </li>
+            ))}
           </ul>
         </nav>
 

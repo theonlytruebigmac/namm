@@ -18,43 +18,27 @@ export class NodeRepository {
   upsert(node: ProcessedNodeInfo): Database.RunResult {
     // First, check if a node with this node_num already exists with a different id
     // This can happen when node IDs change but node_num stays the same
-    const existing = this.db.prepare(
+    const existingByNodeNum = this.db.prepare(
       'SELECT id FROM nodes WHERE node_num = ? AND id != ?'
     ).get(node.nodeNum, node.id) as { id: string } | undefined;
 
-    if (existing) {
-      // Update the existing record to use the new id
-      const updateStmt = this.db.prepare(`
-        UPDATE nodes SET
-          id = @id,
-          short_name = @shortName,
-          long_name = @longName,
-          hw_model = @hwModel,
-          role = @role,
-          last_heard = @lastHeard,
-          snr = @snr,
-          rssi = @rssi,
-          hops_away = @hopsAway,
-          updated_at = @now
-        WHERE node_num = @nodeNum
-      `);
-
-      return updateStmt.run({
-        id: node.id,
-        nodeNum: node.nodeNum,
-        shortName: node.shortName,
-        longName: node.longName,
-        hwModel: node.hwModel,
-        role: node.role,
-        lastHeard: node.lastHeard,
-        snr: node.snr ?? null,
-        rssi: node.rssi ?? null,
-        hopsAway: node.hopsAway ?? null,
-        now: Date.now()
-      });
+    if (existingByNodeNum) {
+      // Delete the old record first, then we can insert the new one
+      // This handles the case where node_num stays the same but id changes
+      this.db.prepare('DELETE FROM nodes WHERE node_num = ?').run(node.nodeNum);
     }
 
-    // Standard upsert on id
+    // Also check if a node with this id already exists with a different node_num
+    const existingById = this.db.prepare(
+      'SELECT node_num FROM nodes WHERE id = ? AND node_num != ?'
+    ).get(node.id, node.nodeNum) as { node_num: number } | undefined;
+
+    if (existingById) {
+      // Delete the old record - the node_num is more reliable as the identifier
+      this.db.prepare('DELETE FROM nodes WHERE id = ?').run(node.id);
+    }
+
+    // Now we can safely upsert - any conflicting records have been removed
     const stmt = this.db.prepare(`
       INSERT INTO nodes (
         id, node_num, short_name, long_name, hw_model, role,

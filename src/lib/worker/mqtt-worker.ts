@@ -12,7 +12,7 @@ import { MessageQueue } from './message-queue';
 import { BatchWriter } from './batch-writer';
 import { Deduplicator } from './deduplicator';
 import { RateLimiter } from './rate-limiter';
-import { getBroadcaster } from '@/lib/websocket';
+import { getSSEBroadcaster } from '@/lib/sse';
 import { ChannelRepository } from '@/lib/db/repositories/channels';
 import { TracerouteRepository } from '@/lib/db/repositories/traceroutes';
 import { getPCAPWriter, type PacketMetadata } from '@/lib/pcap/pcap-writer';
@@ -178,7 +178,7 @@ export class MQTTWorker {
 
       // Broadcast raw MQTT packet for live stream view
       // Do this early so all packets show in the stream regardless of processing
-      const broadcaster = getBroadcaster();
+      const broadcaster = getSSEBroadcaster();
       if (broadcaster) {
         // Extract nodeId for the packet
         let nodeId: string | undefined;
@@ -284,7 +284,7 @@ export class MQTTWorker {
    * Broadcast update to WebSocket clients
    */
   private broadcastUpdate(data: ProcessedData): void {
-    const broadcaster = getBroadcaster();
+    const broadcaster = getSSEBroadcaster();
     if (!broadcaster) return;
 
     try {

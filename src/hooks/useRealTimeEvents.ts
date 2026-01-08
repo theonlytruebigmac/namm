@@ -2,18 +2,22 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { notifyNewMessage, notifyNodeStatus, notifyLowBattery } from "@/lib/notifications";
-import { useWebSocketEvent } from "./useWebSocket";
-import { getWebSocketManager } from "@/lib/api/websocket";
+import { useSSEEvent } from "./useSSE";
+import { getSSEManager } from "@/lib/api/sse";
+import {
+  evaluateBatteryThreshold,
+  evaluateSignalThreshold,
+  evaluateHopsThreshold,
+} from "@/lib/alerts";
 
 interface RealtimeEvent {
   type: string;
   timestamp: number;
-  data?: any;
+  data?: unknown;
 }
 
 /**
- * Hook to manage real-time events from WebSocket
- * Replaces the old SSE-based implementation
+ * Hook to manage real-time events via SSE
  */
 export function useRealTimeEvents() {
   const [isConnected, setIsConnected] = useState(false);
@@ -24,9 +28,9 @@ export function useRealTimeEvents() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    const wsManager = getWebSocketManager();
+    const sseManager = getSSEManager();
     const checkConnection = () => {
-      setIsConnected(wsManager.isConnected());
+      setIsConnected(sseManager.isConnected());
     };
 
     // Check immediately
@@ -39,7 +43,7 @@ export function useRealTimeEvents() {
   }, []);
 
   // Generic event handler
-  const handleEvent = useCallback((type: string, data: any) => {
+  const handleEvent = useCallback((type: string, data: unknown) => {
     const realtimeEvent: RealtimeEvent = {
       type,
       timestamp: Date.now(),
@@ -51,35 +55,65 @@ export function useRealTimeEvents() {
 
     // Trigger notifications based on event type
     if (type === "message.new" && data) {
-      const message = data as any;
+      const message = data as Record<string, unknown>;
       notifyNewMessage(
-        message.from || message.fromUser || "Unknown",
-        message.text || message.message || ""
+        (message.from as string) || (message.fromUser as string) || "Unknown",
+        (message.text as string) || (message.message as string) || ""
       );
+
+      // Check hop count threshold
+      const hopStart = message.hopStart as number | undefined;
+      const hopLimit = message.hopLimit as number | undefined;
+      if (hopStart !== undefined && hopLimit !== undefined) {
+        const hops = hopStart - hopLimit; // Calculate actual hops taken
+        if (hops > 0) {
+          const fromId = (message.fromId as string) || (message.from as string) || "unknown";
+          const fromName = (message.fromUser as string) || undefined;
+          evaluateHopsThreshold(hops, fromId, fromName);
+        }
+      }
     } else if (type === "node.update" && data) {
-      const node = data as any;
+      const node = data as Record<string, unknown>;
+      const nodeId = (node.id as string) || (node.nodeId as string) || "unknown";
+      const nodeName = (node.longName as string) || (node.shortName as string) || undefined;
+
+      // Check for status change notifications
       if (node.status === "online" || node.status === "offline") {
         notifyNodeStatus(
-          node.longName || node.shortName || "Unknown Node",
-          node.status
+          nodeName || "Unknown Node",
+          node.status as "online" | "offline"
         );
       }
-      if (node.batteryLevel !== undefined && node.batteryLevel < 20) {
+
+      // Legacy battery notification (kept for compatibility)
+      if (node.batteryLevel !== undefined && (node.batteryLevel as number) < 20) {
         notifyLowBattery(
-          node.longName || node.shortName || "Unknown Node",
-          node.batteryLevel
+          nodeName || "Unknown Node",
+          node.batteryLevel as number
         );
+      }
+
+      // Evaluate configurable alert thresholds
+      if (node.batteryLevel !== undefined) {
+        evaluateBatteryThreshold(node.batteryLevel as number, nodeId, nodeName);
+      }
+      if (node.snr !== undefined || node.rssi !== undefined) {
+        // Use SNR if available, fall back to RSSI
+        const signalValue = (node.rssi as number) ?? (node.snr as number);
+        if (signalValue !== undefined) {
+          evaluateSignalThreshold(signalValue, nodeId, nodeName);
+        }
       }
     }
   }, []);
 
-  // Subscribe to all event types
-  useWebSocketEvent("node.update", (data) => handleEvent("node.update", data));
-  useWebSocketEvent("node.new", (data) => handleEvent("node.new", data));
-  useWebSocketEvent("message.new", (data) => handleEvent("message.new", data));
-  useWebSocketEvent("device.stats", (data) => handleEvent("device.stats", data));
-  useWebSocketEvent("device.connection", (data) => handleEvent("device.connection", data));
-  useWebSocketEvent("error", (data) => handleEvent("error", data));
+  // Subscribe to all event types via SSE
+  useSSEEvent("node.update", (data) => handleEvent("node.update", data));
+  useSSEEvent("node.new", (data) => handleEvent("node.new", data));
+  useSSEEvent("message.new", (data) => handleEvent("message.new", data));
+  useSSEEvent("device.stats", (data) => handleEvent("device.stats", data));
+  useSSEEvent("device.connection", (data) => handleEvent("device.connection", data));
+  useSSEEvent("error", (data) => handleEvent("error", data));
 
   const clearHistory = useCallback(() => {
     setEventHistory([]);

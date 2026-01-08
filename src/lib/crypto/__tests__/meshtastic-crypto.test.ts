@@ -38,21 +38,19 @@ describe('Meshtastic Crypto', () => {
       expect(result).toBeNull();
     });
 
-    it('should expand PSK index 1 to default key (zero-padded to 32 bytes)', () => {
+    it('should expand PSK index 1 to default key (16 bytes for AES-128)', () => {
       // Default key "AQ==" = 0x01 (PSK index 1)
       const key = expandPSK(Buffer.from([0x01]));
       expect(key).not.toBeNull();
-      expect(key!.length).toBe(32);
-      // First 16 bytes should be the default PSK
-      expect(key!.subarray(0, 16).toString('hex')).toBe('d4f1bb3a20290759f0bcffabcf4e6901');
-      // Last 16 bytes should be zeros
-      expect(key!.subarray(16, 32).toString('hex')).toBe('00000000000000000000000000000000');
+      expect(key!.length).toBe(16);
+      // Should be the default PSK with last byte unchanged for index 1
+      expect(key!.toString('hex')).toBe('d4f1bb3a20290759f0bcffabcf4e6901');
     });
 
     it('should increment last byte for PSK index 2', () => {
       const key = expandPSK(Buffer.from([0x02]));
       expect(key).not.toBeNull();
-      expect(key!.length).toBe(32);
+      expect(key!.length).toBe(16);
       // Last byte of 16-byte key should be 0x02 (0x01 + 2 - 1)
       expect(key![15]).toBe(0x02);
     });
@@ -63,13 +61,12 @@ describe('Meshtastic Crypto', () => {
       expect(result).toEqual(key32);
     });
 
-    it('should zero-pad 16-byte key to 32 bytes', () => {
+    it('should pass through 16-byte key unchanged (AES-128)', () => {
       const key16 = Buffer.alloc(16, 0xCD);
       const result = expandPSK(key16);
       expect(result).not.toBeNull();
-      expect(result!.length).toBe(32);
-      expect(result!.subarray(0, 16)).toEqual(key16);
-      expect(result!.subarray(16, 32)).toEqual(Buffer.alloc(16, 0));
+      expect(result!.length).toBe(16);
+      expect(result!).toEqual(key16);
     });
   });
 
@@ -77,9 +74,9 @@ describe('Meshtastic Crypto', () => {
     it('should decode AQ== (default key index 1) correctly', () => {
       const key = pskFromBase64('AQ==');
       expect(key).not.toBeNull();
-      expect(key!.length).toBe(32);
-      // First 16 bytes should be the default PSK
-      expect(key!.subarray(0, 16).toString('hex')).toBe('d4f1bb3a20290759f0bcffabcf4e6901');
+      expect(key!.length).toBe(16); // 16-byte key for PSK index
+      // Should be the default PSK
+      expect(key!.toString('hex')).toBe('d4f1bb3a20290759f0bcffabcf4e6901');
     });
 
     it('should return null for invalid base64', () => {
@@ -120,7 +117,8 @@ describe('Meshtastic Crypto', () => {
       const nonce = generateNonce(packetId, fromNode);
       const plaintext = Buffer.from('Hello, Meshtastic!');
 
-      const cipher = crypto.createCipheriv('aes-256-ctr', key, nonce);
+      // Use aes-128-ctr for 16-byte key (matching firmware)
+      const cipher = crypto.createCipheriv('aes-128-ctr', key, nonce);
       const encrypted = Buffer.concat([cipher.update(plaintext), cipher.final()]);
 
       // Now decrypt

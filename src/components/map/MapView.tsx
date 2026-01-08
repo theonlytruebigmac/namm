@@ -31,7 +31,7 @@ const createCustomIcon = (role: string, isOnline: boolean) => {
     switch (role) {
       case "ROUTER":
       case "ROUTER_CLIENT":
-        return "#22c55e"; // green
+        return "#10b981"; // emerald green
       case "CLIENT":
       case "CLIENT_MUTE":
         return "#3b82f6"; // blue
@@ -40,7 +40,7 @@ const createCustomIcon = (role: string, isOnline: boolean) => {
       case "TRACKER":
         return "#f59e0b"; // amber
       default:
-        return "#10b981"; // emerald
+        return "#06b6d4"; // cyan
     }
   };
 
@@ -50,23 +50,29 @@ const createCustomIcon = (role: string, isOnline: boolean) => {
     className: "custom-marker",
     html: `
       <div style="
-        width: 28px;
-        height: 28px;
+        width: 24px;
+        height: 24px;
         background-color: ${color};
-        border: 3px solid white;
+        border: 2px solid rgba(0,0,0,0.6);
+        outline: 2px solid white;
         border-radius: 50%;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.4);
+        box-shadow: 0 2px 6px rgba(0,0,0,0.5);
         display: flex;
         align-items: center;
         justify-content: center;
-        ${isOnline ? "animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;" : ""}
       ">
-        ${isOnline ? '<div style="width: 10px; height: 10px; background-color: white; border-radius: 50%;"></div>' : ''}
+        <div style="
+          width: 8px;
+          height: 8px;
+          background-color: white;
+          border-radius: 50%;
+          opacity: ${isOnline ? '1' : '0.3'};
+        "></div>
       </div>
     `,
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
-    popupAnchor: [0, -14],
+    iconSize: [24, 24],
+    iconAnchor: [12, 12],
+    popupAnchor: [0, -12],
   });
 };
 
@@ -383,10 +389,19 @@ export function MapView({
           const isOnline = node.lastHeard && Date.now() - node.lastHeard < 3600000;
           if (!isOnline) return null;
 
-          // Approximate range based on role (in meters)
-          const range = node.role === "ROUTER" || node.role === "ROUTER_CLIENT" ? 5000 :
-                       node.role === "REPEATER" ? 10000 :
-                       3000;
+          // Calculate range based on role and SNR if available
+          // Better SNR = better range estimation
+          const baseRange = node.role === "ROUTER" || node.role === "ROUTER_CLIENT" ? 8000 :
+                           node.role === "REPEATER" ? 12000 :
+                           5000;
+
+          // Adjust based on SNR if available (SNR of 10+ is excellent)
+          const snrMultiplier = node.snr ? Math.min(1.5, Math.max(0.5, (node.snr + 10) / 20)) : 1;
+          const range = Math.round(baseRange * snrMultiplier);
+
+          const color = node.role === "ROUTER" || node.role === "ROUTER_CLIENT" ? "#10b981" :
+                       node.role === "REPEATER" ? "#a855f7" :
+                       "#3b82f6";
 
           return (
             <Circle
@@ -394,11 +409,12 @@ export function MapView({
               center={[node.position!.latitude, node.position!.longitude]}
               radius={range}
               pathOptions={{
-                color: "#10b981",
-                fillColor: "#10b981",
-                fillOpacity: 0.05,
-                weight: 1,
-                opacity: 0.3
+                color: color,
+                fillColor: color,
+                fillOpacity: 0.08,
+                weight: 2,
+                opacity: 0.4,
+                dashArray: "4, 4"
               }}
             />
           );

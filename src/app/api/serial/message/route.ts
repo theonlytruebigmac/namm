@@ -17,7 +17,7 @@ import { NeighborRepository } from '@/lib/db/repositories/neighbors';
 import { RoutingRepository } from '@/lib/db/repositories/routing';
 import type { ProcessedNodeInfo, ProcessedPosition, ProcessedTelemetry, ProcessedMessage } from '@/lib/mqtt-processor';
 import type { ProcessedTraceroute } from '@/types/extended-packets';
-import { getBroadcaster } from '@/lib/websocket';
+import { getSSEBroadcaster } from '@/lib/sse';
 
 // Port numbers for Meshtastic apps
 const PORTNUM = {
@@ -184,7 +184,7 @@ async function handleNodeInfo(nodeInfo: Record<string, unknown>) {
   nodeRepo.upsert(nodeData);
 
   // Broadcast to WebSocket clients
-  const broadcaster = getBroadcaster();
+  const broadcaster = getSSEBroadcaster();
   if (broadcaster) {
     broadcaster.queueNodeUpdate({
       id: nodeId,
@@ -291,7 +291,7 @@ async function handleTextMessage(
   msgRepo.insert(msgData);
 
   // Broadcast to WebSocket clients
-  const broadcaster = getBroadcaster();
+  const broadcaster = getSSEBroadcaster();
   if (broadcaster) {
     broadcaster.queueMessage({
       id: msgData.id,
@@ -352,7 +352,7 @@ async function handlePosition(
   posRepo.insert(posData);
 
   // Broadcast to WebSocket clients
-  const broadcaster = getBroadcaster();
+  const broadcaster = getSSEBroadcaster();
   if (broadcaster) {
     broadcaster.queuePositionUpdate({
       id: 0, // Will be assigned by DB
@@ -409,7 +409,7 @@ async function handleTelemetry(
   telRepo.insert(telData);
 
   // Broadcast to WebSocket clients
-  const broadcaster = getBroadcaster();
+  const broadcaster = getSSEBroadcaster();
   if (broadcaster) {
     broadcaster.queueTelemetryUpdate({
       id: 0, // Will be assigned by DB
@@ -659,7 +659,7 @@ async function handleNodeInfoPacket(
   nodeRepo.upsert(nodeData);
 
   // Broadcast to WebSocket clients
-  const broadcaster = getBroadcaster();
+  const broadcaster = getSSEBroadcaster();
   if (broadcaster) {
     broadcaster.queueNodeUpdate({
       id: nodeId,

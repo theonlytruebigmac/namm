@@ -22,26 +22,30 @@ describe("Device API", () => {
   describe("getDeviceInfo", () => {
     it("should fetch and transform device info", async () => {
       const mockApiResponse = {
-        myNodeNum: 123456789,
-        user: {
-          id: "!07654321",
-          longName: "Test Device",
-          shortName: "TEST",
-          hwModel: 42, // HELTEC_V3
+        connected: true,
+        mode: "http",
+        device: {
+          myNodeNum: 123456789,
+          user: {
+            id: "!07654321",
+            longName: "Test Device",
+            shortName: "TEST",
+            hwModel: 42, // HELTEC_V3
+          },
+          firmwareVersion: "2.2.0",
+          hasGPS: true,
+          hasBluetooth: true,
+          region: "US",
+          modemPreset: "LONG_FAST",
+          role: 0,
         },
-        firmwareVersion: "2.2.0",
-        hasGPS: true,
-        hasBluetooth: true,
-        region: "US",
-        modemPreset: "LONG_FAST",
-        role: 0,
       };
 
       vi.mocked(http.apiGet).mockResolvedValue(mockApiResponse);
 
       const result = await getDeviceInfo();
 
-      expect(http.apiGet).toHaveBeenCalledWith("/api/device/info");
+      expect(http.apiGet).toHaveBeenCalledWith("/api/device");
       expect(result).toEqual({
         myNodeNum: 123456789,
         nodeId: "!07654321",
@@ -59,12 +63,16 @@ describe("Device API", () => {
 
     it("should handle missing optional fields", async () => {
       const mockApiResponse = {
-        myNodeNum: 123456789,
-        user: {
-          id: "!07654321",
-          longName: "Minimal Device",
-          shortName: "MIN",
-          hwModel: 0,
+        connected: true,
+        mode: "http",
+        device: {
+          myNodeNum: 123456789,
+          user: {
+            id: "!07654321",
+            longName: "Minimal Device",
+            shortName: "MIN",
+            hwModel: 0,
+          },
         },
       };
 
@@ -89,12 +97,16 @@ describe("Device API", () => {
 
     it("should handle unknown hardware model", async () => {
       const mockApiResponse = {
-        myNodeNum: 123,
-        user: {
-          id: "!00000123",
-          longName: "Test",
-          shortName: "TST",
-          hwModel: 9999,
+        connected: true,
+        mode: "http",
+        device: {
+          myNodeNum: 123,
+          user: {
+            id: "!00000123",
+            longName: "Test",
+            shortName: "TST",
+            hwModel: 9999,
+          },
         },
       };
 

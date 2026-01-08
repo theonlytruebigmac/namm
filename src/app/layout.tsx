@@ -6,6 +6,7 @@ import { WebSocketProvider } from "@/components/providers/WebSocketProvider";
 import { MQTTProvider } from "@/components/providers/MQTTProvider";
 import { KeyboardShortcutsProvider } from "@/components/providers/KeyboardShortcutsProvider";
 import { ToastProvider } from "@/components/ui/toast";
+import { TooltipProvider } from "@/components/ui/tooltip";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { MobileNav } from "@/components/layout/MobileNav";
 import { NotificationInitializer } from "@/components/NotificationInitializer";
@@ -41,17 +42,19 @@ export default function RootLayout({
           <WebSocketProvider>
             <MQTTProvider>
               <ToastProvider>
-                <NotificationInitializer />
-                <KeyboardShortcutsProvider />
-                <div className="min-h-screen">
-                  <Sidebar />
-                  <main className="lg:pl-64 pb-16 lg:pb-0">
-                    <div className="px-4 py-6 sm:px-6 lg:px-8">
-                      {children}
-                    </div>
-                  </main>
-                  <MobileNav />
-                </div>
+                <TooltipProvider>
+                  <NotificationInitializer />
+                  <KeyboardShortcutsProvider />
+                  <div className="min-h-screen">
+                    <Sidebar />
+                    <main className="lg:pl-64 pb-16 lg:pb-0">
+                      <div className="px-4 py-6 sm:px-6 lg:px-8">
+                        {children}
+                      </div>
+                    </main>
+                    <MobileNav />
+                  </div>
+                </TooltipProvider>
               </ToastProvider>
             </MQTTProvider>
           </WebSocketProvider>

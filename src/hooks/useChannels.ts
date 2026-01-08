@@ -1,19 +1,19 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { getChannels, getChannel, markChannelRead } from "@/lib/api";
-import { useWebSocketEvent } from "./useWebSocket";
+import { useSSEEvent } from "./useSSE";
 
 export function useChannels() {
   const queryClient = useQueryClient();
 
-  // Subscribe to message updates to refresh channel message counts
-  useWebSocketEvent("message.new", () => {
+  // Subscribe to message updates to refresh channel message counts via SSE
+  useSSEEvent("message.new", () => {
     queryClient.invalidateQueries({ queryKey: ["channels"] });
   });
 
   return useQuery({
     queryKey: ["channels"],
     queryFn: getChannels,
-    refetchInterval: 30000, // Reduce polling since we have WebSocket
+    refetchInterval: 30000, // Reduce polling since we have SSE
     staleTime: 5000,
   });
 }

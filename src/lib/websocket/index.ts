@@ -1,8 +1,10 @@
 /**
- * WebSocket module exports
+ * Protocol Types
+ *
+ * These types are shared between SSE broadcaster and workers.
+ * Kept in this location for backwards compatibility.
+ *
+ * @deprecated Import from '@/lib/websocket/protocol' directly
  */
 
-export { initWebSocketServer, getConnectionManager, getBroadcaster, getWebSocketStats, shutdownWebSocketServer } from './server';
-export { ConnectionManager } from './connection-manager';
-export { Broadcaster } from './broadcaster';
 export * from './protocol';

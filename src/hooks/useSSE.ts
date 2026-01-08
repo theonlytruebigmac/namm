@@ -1,53 +1,52 @@
 /**
- * WebSocket Hooks
+ * SSE Hooks
  *
- * React hooks for WebSocket integration
+ * React hooks for Server-Sent Events integration
+ * Drop-in replacement for WebSocket hooks
  */
 
 import { useEffect, useRef, useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import {
-  getWebSocketManager,
+  getSSEManager,
   type EventHandler,
-  type WebSocketEventType,
-} from "@/lib/api/websocket";
+  type SSEEventType,
+} from "@/lib/api/sse";
 import type { Node, Message } from "@/types";
 
 /**
- * Hook to manage WebSocket connection lifecycle
+ * Hook to manage SSE connection lifecycle
  */
-export function useWebSocket(autoConnect = true) {
-  const wsManager = useRef<ReturnType<typeof getWebSocketManager> | null>(null);
+export function useSSE(autoConnect = true) {
+  const sseManager = useRef<ReturnType<typeof getSSEManager> | null>(null);
 
   // Initialize manager client-side only
   useEffect(() => {
-    if (!wsManager.current) {
-      wsManager.current = getWebSocketManager();
+    if (!sseManager.current) {
+      sseManager.current = getSSEManager();
     }
   }, []);
 
   useEffect(() => {
-    if (!wsManager.current) return;
+    if (!sseManager.current) return;
 
-    // Only connect if autoConnect is true
-    // Do NOT disconnect on cleanup - this is a singleton shared across components
     if (autoConnect) {
-      wsManager.current.connect();
+      sseManager.current.connect();
     }
 
     // No cleanup - singleton connection stays alive
   }, [autoConnect]);
 
   const connect = useCallback(() => {
-    wsManager.current?.connect();
+    sseManager.current?.connect();
   }, []);
 
   const disconnect = useCallback(() => {
-    wsManager.current?.disconnect();
+    sseManager.current?.disconnect();
   }, []);
 
   const isConnected = useCallback(() => {
-    return wsManager.current?.isConnected() ?? false;
+    return sseManager.current?.isConnected() ?? false;
   }, []);
 
   return {
@@ -58,19 +57,19 @@ export function useWebSocket(autoConnect = true) {
 }
 
 /**
- * Hook to subscribe to WebSocket events
+ * Hook to subscribe to SSE events
  */
-export function useWebSocketEvent<T = unknown>(
-  event: WebSocketEventType,
+export function useSSEEvent<T = unknown>(
+  event: SSEEventType,
   handler: EventHandler<T>
 ) {
-  const wsManager = useRef<ReturnType<typeof getWebSocketManager> | null>(null);
+  const sseManager = useRef<ReturnType<typeof getSSEManager> | null>(null);
   const handlerRef = useRef(handler);
 
   // Initialize manager client-side only
   useEffect(() => {
-    if (!wsManager.current) {
-      wsManager.current = getWebSocketManager();
+    if (!sseManager.current) {
+      sseManager.current = getSSEManager();
     }
   }, []);
 
@@ -80,13 +79,13 @@ export function useWebSocketEvent<T = unknown>(
   }, [handler]);
 
   useEffect(() => {
-    if (!wsManager.current) return;
+    if (!sseManager.current) return;
 
     const wrappedHandler = (data: unknown) => {
       handlerRef.current(data as T);
     };
 
-    const unsubscribe = wsManager.current.on(event, wrappedHandler as EventHandler<unknown>);
+    const unsubscribe = sseManager.current.on(event, wrappedHandler as EventHandler<unknown>);
 
     return () => {
       unsubscribe();
@@ -100,7 +99,7 @@ export function useWebSocketEvent<T = unknown>(
 export function useNodeUpdates() {
   const queryClient = useQueryClient();
 
-  useWebSocketEvent<Node>("node.update", (node) => {
+  useSSEEvent<Node>("node.update", (node) => {
     // Update the nodes cache
     queryClient.setQueryData(["nodes"], (oldData: Node[] | undefined) => {
       if (!oldData) return [node];
@@ -119,7 +118,7 @@ export function useNodeUpdates() {
     queryClient.invalidateQueries({ queryKey: ["node", node.id] });
   });
 
-  useWebSocketEvent<Node>("node.new", (node) => {
+  useSSEEvent<Node>("node.new", (node) => {
     // Add new node to cache
     queryClient.setQueryData(["nodes"], (oldData: Node[] | undefined) => {
       if (!oldData) return [node];
@@ -139,7 +138,7 @@ export function useNodeUpdates() {
 export function useMessageUpdates() {
   const queryClient = useQueryClient();
 
-  useWebSocketEvent<Message>("message.new", (message) => {
+  useSSEEvent<Message>("message.new", (message) => {
     // Add new message to cache
     queryClient.setQueryData(
       ["messages"],
@@ -174,7 +173,7 @@ export function useMessageUpdates() {
 export function useDeviceStatsUpdates() {
   const queryClient = useQueryClient();
 
-  useWebSocketEvent<{
+  useSSEEvent<{
     messagesReceived: number;
     messagesSent: number;
     nodesInMesh: number;
@@ -192,7 +191,7 @@ export function useConnectionStatus(
   onConnect?: () => void,
   onDisconnect?: (reason?: string) => void
 ) {
-  useWebSocketEvent<{ connected: boolean; reason?: string }>(
+  useSSEEvent<{ connected: boolean; reason?: string }>(
     "device.connection",
     (data) => {
       if (data.connected && onConnect) {
@@ -205,25 +204,13 @@ export function useConnectionStatus(
 }
 
 /**
- * Hook for WebSocket errors
- */
-export function useWebSocketErrors(
-  onError?: (error: { message: string; code?: string }) => void
-) {
-  useWebSocketEvent<{ message: string; code?: string }>("error", (error) => {
-    console.error("WebSocket error:", error);
-    if (onError) {
-      onError(error);
-    }
-  });
-}
-
-/**
  * Combined hook for all real-time updates
  */
 export function useRealtimeUpdates() {
-  useWebSocket(true);
   useNodeUpdates();
   useMessageUpdates();
   useDeviceStatsUpdates();
 }
+
+// Re-export types
+export type { SSEEventType, EventHandler };

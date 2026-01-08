@@ -1,15 +1,16 @@
 /**
- * WebSocket API Route
+ * SSE Status API Route
  *
- * Handles WebSocket upgrade requests
+ * Returns SSE broadcaster status
+ * (Kept as /api/ws for backwards compatibility)
  */
 
 import { NextRequest } from 'next/server';
-import { getWebSocketStats } from '@/lib/websocket';
+import { getSSEStats } from '@/lib/sse';
 
 export async function GET(request: NextRequest) {
-  // Return WebSocket status
-  const stats = getWebSocketStats();
+  // Return SSE status
+  const stats = getSSEStats();
 
   return Response.json({
     success: true,

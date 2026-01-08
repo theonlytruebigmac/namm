@@ -22,20 +22,13 @@ describe('PriorityQueue', () => {
     const data: ProcessedData = {
       type: 'nodeinfo',
       data: {
-        id: 'node1',
-        node_num: 123,
-        short_name: 'TEST',
-        long_name: 'Test Node',
-        hw_model: 'TBEAM',
+        id: '!node1',
+        nodeNum: 123,
+        shortName: 'TEST',
+        longName: 'Test Node',
+        hwModel: 'TBEAM',
         role: 1,
-        last_heard: Date.now(),
-        snr: null,
-        rssi: null,
-        hops_away: null,
-        battery_level: null,
-        voltage: null,
-        created_at: Date.now(),
-        updated_at: Date.now()
+        lastHeard: Date.now(),
       }
     };
 
@@ -48,32 +41,21 @@ describe('PriorityQueue', () => {
     const normalData: ProcessedData = {
       type: 'position',
       data: {
-        id: 1,
-        node_id: 'node1',
-        node_num: 123,
-        latitude: 40.7128,
-        longitude: -74.0060,
-        altitude: null,
-        precision_bits: null,
+        nodeId: '!node1',
+        nodeNum: 123,
+        position: { latitude: 40.7128, longitude: -74.0060 },
         timestamp: Date.now(),
-        snr: null,
-        rssi: null
       }
     };
 
     const criticalData: ProcessedData = {
       type: 'telemetry',
       data: {
-        id: 1,
-        node_id: 'node1',
-        node_num: 123,
+        nodeId: '!node1',
+        nodeNum: 123,
         timestamp: Date.now(),
-        battery_level: 10, // Low battery
+        batteryLevel: 10, // Low battery
         voltage: 3.1,
-        channel_utilization: null,
-        air_util_tx: null,
-        uptime: null,
-        temperature: null
       }
     };
 
@@ -91,16 +73,11 @@ describe('PriorityQueue', () => {
     const lowBatteryData: ProcessedData = {
       type: 'telemetry',
       data: {
-        id: 1,
-        node_id: 'node1',
-        node_num: 123,
+        nodeId: '!node1',
+        nodeNum: 123,
         timestamp: Date.now(),
-        battery_level: 15, // Low battery
+        batteryLevel: 15, // Low battery - should trigger critical priority
         voltage: 3.2,
-        channel_utilization: null,
-        air_util_tx: null,
-        uptime: null,
-        temperature: null
       }
     };
 
@@ -118,16 +95,10 @@ describe('PriorityQueue', () => {
       const data: ProcessedData = {
         type: 'position',
         data: {
-          id: i,
-          node_id: `node${i}`,
-          node_num: i,
-          latitude: 40,
-          longitude: -74,
-          altitude: null,
-          precision_bits: null,
+          nodeId: `!node${i}`,
+          nodeNum: i,
+          position: { latitude: 40, longitude: -74 },
           timestamp: Date.now(),
-          snr: null,
-          rssi: null
         }
       };
       smallQueue.enqueue(`msg${i}`, data, MessagePriority.LOW);
@@ -139,16 +110,11 @@ describe('PriorityQueue', () => {
     const criticalData: ProcessedData = {
       type: 'telemetry',
       data: {
-        id: 100,
-        node_id: 'critical',
-        node_num: 100,
+        nodeId: '!critical',
+        nodeNum: 100,
         timestamp: Date.now(),
-        battery_level: 5,
+        batteryLevel: 5,
         voltage: 3.0,
-        channel_utilization: null,
-        air_util_tx: null,
-        uptime: null,
-        temperature: null
       }
     };
 
@@ -161,16 +127,10 @@ describe('PriorityQueue', () => {
     const data: ProcessedData = {
       type: 'position',
       data: {
-        id: 1,
-        node_id: 'node1',
-        node_num: 123,
-        latitude: 40,
-        longitude: -74,
-        altitude: null,
-        precision_bits: null,
+        nodeId: '!node1',
+        nodeNum: 123,
+        position: { latitude: 40, longitude: -74 },
         timestamp: Date.now(),
-        snr: null,
-        rssi: null
       }
     };
 

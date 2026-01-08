@@ -21,18 +21,45 @@ vi.mock('../settings', () => ({
 }))
 
 describe('notifications', () => {
+  let mockPermission: NotificationPermission = 'default';
+  let NotificationConstructorMock: ReturnType<typeof vi.fn>;
+  let requestPermissionMock: ReturnType<typeof vi.fn>;
+
+  // Helper to set permission in tests
+  const setPermission = (perm: NotificationPermission) => {
+    mockPermission = perm;
+  };
+
+  // Helper to create notification mock with proper permission
+  const setupNotificationMock = () => {
+    NotificationConstructorMock = vi.fn();
+    requestPermissionMock = vi.fn().mockResolvedValue('granted');
+
+    // Create a constructor function that also has static properties
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const NotificationMock: any = function(title: string, options?: NotificationOptions) {
+      // @ts-expect-error - vi.fn() is callable but TS doesn't recognize it
+      NotificationConstructorMock(title, options);
+    };
+
+    Object.defineProperty(NotificationMock, 'permission', {
+      get: () => mockPermission,
+      configurable: true,
+    });
+    NotificationMock.requestPermission = requestPermissionMock;
+
+    global.Notification = NotificationMock;
+  };
+
   beforeEach(() => {
     vi.clearAllMocks()
-    // Reset Notification mock
-    global.Notification = {
-      permission: 'default',
-      requestPermission: vi.fn().mockResolvedValue('granted'),
-    } as any
+    mockPermission = 'default';
+    setupNotificationMock();
   })
 
   describe('requestNotificationPermission', () => {
     it('should return true if permission already granted', async () => {
-      global.Notification.permission = 'granted'
+      setPermission('granted');
 
       const result = await requestNotificationPermission()
 
@@ -41,7 +68,7 @@ describe('notifications', () => {
     })
 
     it('should request permission if not yet decided', async () => {
-      global.Notification.permission = 'default'
+      setPermission('default')
       vi.mocked(Notification.requestPermission).mockResolvedValue('granted')
 
       const result = await requestNotificationPermission()
@@ -51,7 +78,7 @@ describe('notifications', () => {
     })
 
     it('should return false if permission denied', async () => {
-      global.Notification.permission = 'denied'
+      setPermission('denied')
 
       const result = await requestNotificationPermission()
 
@@ -73,7 +100,7 @@ describe('notifications', () => {
 
   describe('canShowNotification', () => {
     beforeEach(() => {
-      global.Notification.permission = 'granted'
+      setPermission('granted')
     })
 
     it('should return true for messages when enabled', () => {
@@ -101,7 +128,7 @@ describe('notifications', () => {
     })
 
     it('should return false if permission not granted', () => {
-      global.Notification.permission = 'default'
+      setPermission('default')
 
       expect(canShowNotification('message')).toBe(false)
     })
@@ -123,10 +150,7 @@ describe('notifications', () => {
 
   describe('notifyNewMessage', () => {
     it('should create notification when enabled', () => {
-      global.Notification.permission = 'granted'
-      const NotificationMock = vi.fn()
-      global.Notification = NotificationMock as any
-      global.Notification.permission = 'granted'
+      setPermission('granted')
 
       vi.mocked(settings.getSettings).mockReturnValue({
         notifyNewMessages: true,
@@ -135,7 +159,7 @@ describe('notifications', () => {
 
       notifyNewMessage('TestNode', 'Hello World')
 
-      expect(NotificationMock).toHaveBeenCalledWith(
+      expect(NotificationConstructorMock).toHaveBeenCalledWith(
         'New Message',
         expect.objectContaining({
           body: 'TestNode: Hello World',
@@ -144,10 +168,7 @@ describe('notifications', () => {
     })
 
     it('should truncate long messages', () => {
-      global.Notification.permission = 'granted'
-      const NotificationMock = vi.fn()
-      global.Notification = NotificationMock as any
-      global.Notification.permission = 'granted'
+      setPermission('granted')
 
       vi.mocked(settings.getSettings).mockReturnValue({
         notifyNewMessages: true,
@@ -157,7 +178,7 @@ describe('notifications', () => {
       const longMessage = 'a'.repeat(150)
       notifyNewMessage('TestNode', longMessage)
 
-      expect(NotificationMock).toHaveBeenCalledWith(
+      expect(NotificationConstructorMock).toHaveBeenCalledWith(
         'New Message',
         expect.objectContaining({
           body: expect.stringContaining('...'),
@@ -168,10 +189,7 @@ describe('notifications', () => {
 
   describe('notifyNodeStatus', () => {
     it('should create notification for node online', () => {
-      global.Notification.permission = 'granted'
-      const NotificationMock = vi.fn()
-      global.Notification = NotificationMock as any
-      global.Notification.permission = 'granted'
+      setPermission('granted')
 
       vi.mocked(settings.getSettings).mockReturnValue({
         notifyNodeStatus: true,
@@ -180,7 +198,7 @@ describe('notifications', () => {
 
       notifyNodeStatus('TestNode', 'online')
 
-      expect(NotificationMock).toHaveBeenCalledWith(
+      expect(NotificationConstructorMock).toHaveBeenCalledWith(
         'Node Status Change',
         expect.objectContaining({
           body: 'TestNode is now online',
@@ -189,10 +207,7 @@ describe('notifications', () => {
     })
 
     it('should create notification for node offline', () => {
-      global.Notification.permission = 'granted'
-      const NotificationMock = vi.fn()
-      global.Notification = NotificationMock as any
-      global.Notification.permission = 'granted'
+      setPermission('granted')
 
       vi.mocked(settings.getSettings).mockReturnValue({
         notifyNodeStatus: true,
@@ -201,7 +216,7 @@ describe('notifications', () => {
 
       notifyNodeStatus('TestNode', 'offline')
 
-      expect(NotificationMock).toHaveBeenCalledWith(
+      expect(NotificationConstructorMock).toHaveBeenCalledWith(
         'Node Status Change',
         expect.objectContaining({
           body: 'TestNode is now offline',
@@ -212,10 +227,7 @@ describe('notifications', () => {
 
   describe('notifyLowBattery', () => {
     it('should create notification for low battery', () => {
-      global.Notification.permission = 'granted'
-      const NotificationMock = vi.fn()
-      global.Notification = NotificationMock as any
-      global.Notification.permission = 'granted'
+      setPermission('granted')
 
       vi.mocked(settings.getSettings).mockReturnValue({
         notifyLowBattery: true,
@@ -224,7 +236,7 @@ describe('notifications', () => {
 
       notifyLowBattery('TestNode', 15)
 
-      expect(NotificationMock).toHaveBeenCalledWith(
+      expect(NotificationConstructorMock).toHaveBeenCalledWith(
         'Low Battery Alert',
         expect.objectContaining({
           body: 'TestNode battery is at 15%',
@@ -235,13 +247,11 @@ describe('notifications', () => {
 
   describe('initializeNotifications', () => {
     it('should request permission on first call', async () => {
-      global.Notification.permission = 'default'
-      const requestPermissionSpy = vi.spyOn(Notification, 'requestPermission')
-        .mockResolvedValue('granted')
+      setPermission('default')
 
       await initializeNotifications()
 
-      expect(requestPermissionSpy).toHaveBeenCalled()
+      expect(requestPermissionMock).toHaveBeenCalled()
     })
   })
 })

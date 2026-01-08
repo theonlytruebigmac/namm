@@ -198,7 +198,6 @@ describe('PositionRepository', () => {
       latitude: 38.0,
       longitude: -84.5,
       altitude: 300,
-      precisionBits: 16
     },
     timestamp: Date.now(),
     snr: 5.5,

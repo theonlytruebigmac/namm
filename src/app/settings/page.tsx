@@ -6,8 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { ThemeToggle } from "@/components/ui/theme-toggle";
-import {
-  Settings as SettingsIcon,
+import { Settings as SettingsIcon,
   Radio,
   Bell,
   Sun,
@@ -18,19 +17,20 @@ import {
   Power,
   RotateCw,
   AlertTriangle,
-  Download,
-  Upload,
   Database,
   Languages,
+  Puzzle,
 } from "lucide-react";
-import { useState, useEffect, useRef } from "react";
-import { getSettings, saveSettings, clearAllData, exportBackup, importBackup, type AppSettings } from "@/lib/settings";
+import { useState, useEffect } from "react";
+import { getSettings, saveSettings, clearAllData, type AppSettings } from "@/lib/settings";
 import { useDeviceControl } from "@/hooks/useDeviceControl";
 import { useDeviceConnection } from "@/hooks/useDeviceConnection";
 import { MQTTStatusIndicator } from "@/components/mqtt/MQTTStatusIndicator";
 import { SerialConnectionSettings } from "@/components/serial/SerialConnectionSettings";
 import { AuthSettingsCard } from "@/components/settings/AuthSettingsCard";
 import { VirtualNodesCard } from "@/components/settings/VirtualNodesCard";
+import { BackupRestoreCard } from "@/components/settings/BackupRestoreCard";
+import { PluginSettings } from "@/components/settings/PluginSettings";
 import { useI18n } from "@/hooks/useI18n";
 
 export default function SettingsPage() {
@@ -125,40 +125,6 @@ export default function SettingsPage() {
         type: "error",
         message: "Failed to shut down the device. Please try again.",
       });
-    }
-  };
-
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const [restoreMessage, setRestoreMessage] = useState<{ type: "success" | "error"; message: string } | null>(null);
-
-  const handleExportBackup = () => {
-    exportBackup();
-    setRestoreMessage({
-      type: "success",
-      message: "Backup exported successfully",
-    });
-    setTimeout(() => setRestoreMessage(null), 3000);
-  };
-
-  const handleImportBackup = async (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    setRestoreMessage(null);
-    const result = await importBackup(file);
-    setRestoreMessage({
-      type: result.success ? "success" : "error",
-      message: result.message,
-    });
-
-    // Clear the input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = "";
-    }
-
-    // Refresh settings if successful
-    if (result.success) {
-      setSettingsState(getSettings());
     }
   };
 
@@ -539,55 +505,19 @@ export default function SettingsPage() {
         <VirtualNodesCard />
 
         {/* Backup & Restore */}
-        <Card>
+        <BackupRestoreCard />
+
+        {/* Plugins */}
+        <Card className="md:col-span-2">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <Database className="h-5 w-5" />
-              Backup & Restore
+              <Puzzle className="h-5 w-5" />
+              Plugins
             </CardTitle>
-            <CardDescription>Export or import your settings and preferences</CardDescription>
+            <CardDescription>Extend NAMM with additional features and integrations</CardDescription>
           </CardHeader>
-          <CardContent className="space-y-4">
-            <div className="space-y-3">
-              <Button variant="outline" className="w-full" onClick={handleExportBackup}>
-                <Download className="h-4 w-4 mr-2" />
-                Export Backup
-              </Button>
-              <p className="text-sm text-muted-foreground">
-                Download a JSON file with all your settings and alert configurations
-              </p>
-            </div>
-
-            <div className="space-y-3 pt-4 border-t">
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".json"
-                className="hidden"
-                onChange={handleImportBackup}
-              />
-              <Button
-                variant="outline"
-                className="w-full"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <Upload className="h-4 w-4 mr-2" />
-                Import Backup
-              </Button>
-              <p className="text-sm text-muted-foreground">
-                Restore settings from a previously exported backup file
-              </p>
-            </div>
-
-            {restoreMessage && (
-              <div className={`p-3 rounded-lg text-sm ${
-                restoreMessage.type === "success"
-                  ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300"
-                  : "bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300"
-              }`}>
-                {restoreMessage.message}
-              </div>
-            )}
+          <CardContent>
+            <PluginSettings />
           </CardContent>
         </Card>
 

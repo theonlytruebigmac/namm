@@ -7,8 +7,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useMQTTServer } from "@/hooks/useMQTTServer";
-import { processMQTTMessage } from "@/lib/mqtt-processor";
+import { useSSEEvent } from "@/hooks/useSSE";
 import { Activity, Radio, Trash2, MapPin, Users, MessageCircle, BarChart, Search, Filter, X, Pause, Play, Download } from "lucide-react";
+import type { MQTTRawPacket } from "@/lib/api/sse";
 
 interface MQTTMessage {
   id: number;
@@ -18,6 +19,7 @@ interface MQTTMessage {
   type: string;
   parsedType?: string;
   nodeId?: string;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   data?: any;
 }
 
@@ -29,7 +31,6 @@ export default function MQTTPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState<string>("all");
   const scrollRef = useRef<HTMLDivElement>(null);
-  const eventSourceRef = useRef<EventSource | null>(null);
   const pausedMessagesRef = useRef<MQTTMessage[]>([]);
 
   // Track isPaused in a ref to avoid stale closures
@@ -38,92 +39,49 @@ export default function MQTTPage() {
     isPausedRef.current = isPaused;
   }, [isPaused]);
 
-  // Connect to MQTT SSE stream
-  useEffect(() => {
-    // Build the SSE URL - the /api/mqtt endpoint uses env vars or query params
-    const eventSource = new EventSource('/api/mqtt');
-    eventSourceRef.current = eventSource;
+  // Subscribe to mqtt_raw events from SSE stream
+  useSSEEvent<MQTTRawPacket[]>("mqtt_raw", (packets) => {
+    if (!packets || packets.length === 0) return;
 
-    eventSource.onopen = () => {
-      console.log('[MQTT Page] SSE connection opened');
-    };
+    const newMessages: MQTTMessage[] = packets.map((packet) => {
+      // Determine display type based on topic
+      const isEncryptedTopic = packet.topic.includes("/e/");
+      const isMapTopic = packet.topic.includes("/map/");
+      const hasData = packet.data !== undefined && packet.data !== null;
+      const wasDecrypted = isEncryptedTopic && hasData &&
+        packet.parsedType !== "parse_error" &&
+        packet.parsedType !== "decryption_failed" &&
+        packet.parsedType !== "unknown_channel";
 
-    eventSource.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
+      const displayType = wasDecrypted ? "decrypted" : (
+        isMapTopic && hasData ? "mapreport" :
+        packet.topic.includes("/json/") ? "json" :
+        isEncryptedTopic ? "encrypted" :
+        packet.topic.includes("/stat/") ? "status" : "unknown"
+      );
 
-        if (data.type === "mqtt.message") {
-          // Convert base64 payload back to Buffer for encrypted messages
-          const payload = data.isBase64
-            ? Buffer.from(data.payload, "base64")
-            : data.payload;
+      return {
+        id: packet.id,
+        topic: packet.topic,
+        payload: packet.payload.length > 100
+          ? `[Binary ${packet.payload.length} bytes]`
+          : packet.payload,
+        timestamp: new Date(packet.timestamp),
+        type: displayType,
+        parsedType: packet.parsedType,
+        nodeId: packet.nodeId,
+        data: packet.data,
+      };
+    });
 
-          // Use server-side processed result for encrypted messages
-          // Fall back to client-side processing for JSON messages
-          const processed = data.processed || processMQTTMessage(data.topic, payload);
-
-          // Extract nodeId based on processed type
-          let nodeId: string | undefined;
-          let processedData: unknown = undefined;
-
-          if (processed && 'data' in processed && processed.data) {
-            processedData = processed.data;
-            if (typeof processed.data === 'object' && processed.data !== null) {
-              if ('nodeId' in processed.data) {
-                nodeId = (processed.data as { nodeId: string }).nodeId;
-              } else if ('id' in processed.data) {
-                const id = (processed.data as { id: string | number }).id;
-                nodeId = typeof id === 'string' ? id : String(id);
-              } else if ('from' in processed.data) {
-                nodeId = (processed.data as { from: string }).from;
-              }
-            }
-          }
-
-          // Determine display type
-          const isEncryptedTopic = data.topic.includes("/e/");
-          const isMapTopic = data.topic.includes("/map/");
-          const wasDecrypted = isEncryptedTopic && processedData && !processed.type.includes("error") && !processed.type.includes("failed") && !processed.type.includes("unknown_channel");
-          const displayType = wasDecrypted ? "decrypted" : (
-            isMapTopic && processedData ? "mapreport" :
-            data.topic.includes("/json/") ? "json" :
-            isEncryptedTopic ? "encrypted" :
-            data.topic.includes("/stat/") ? "status" : "unknown"
-          );
-
-          const newMessage: MQTTMessage = {
-            id: Date.now() + Math.random(),
-            topic: data.topic,
-            payload: typeof payload === 'string' ? payload : `[Binary ${payload.length} bytes]`,
-            timestamp: new Date(data.timestamp),
-            type: displayType,
-            parsedType: processed.type,
-            nodeId,
-            data: processedData,
-          };
-
-          setMessages((prev) => {
-            if (isPausedRef.current) {
-              pausedMessagesRef.current = [newMessage, ...pausedMessagesRef.current].slice(0, 100);
-              return prev;
-            }
-            return [newMessage, ...prev].slice(0, 100);
-          });
-        }
-      } catch (error) {
-        console.error("[MQTT Page] Error parsing SSE message:", error);
+    setMessages((prev) => {
+      if (isPausedRef.current) {
+        pausedMessagesRef.current = [...newMessages, ...pausedMessagesRef.current].slice(0, 100);
+        return prev;
       }
-    };
-
-    eventSource.onerror = (error) => {
-      console.error('[MQTT Page] SSE error:', error);
-    };
-
-    return () => {
-      console.log('[MQTT Page] Closing SSE connection');
-      eventSource.close();
-    };
-  }, []);
+      return [...newMessages, ...prev].slice(0, 100);
+    });
+  });
 
   useEffect(() => {
     if (autoScroll && scrollRef.current) {
@@ -453,8 +411,8 @@ export default function MQTTPage() {
               </div>
             ) : (
               <div className="space-y-3">
-                {filteredMessages.map((message) => (
-                  <Card key={message.id} className="bg-muted/50">
+                {filteredMessages.map((message, index) => (
+                  <Card key={`${message.id}-${message.timestamp.getTime()}-${index}`} className="bg-muted/50">
                     <CardContent className="pt-4">
                       <div className="flex items-start justify-between gap-4 mb-2">
                         <div className="flex-1">

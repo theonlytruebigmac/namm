@@ -9,13 +9,15 @@ import { Badge } from "@/components/ui/badge";
 import { StatCard } from "@/components/dashboard/stat-card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Map as MapIcon, MapPin, Navigation, Layers, Globe, Route, Flame, GitBranch, Radio } from "lucide-react";
-import { useState, useEffect } from "react";
+import { Map as MapIcon, MapPin, Navigation, Layers, Globe, Route, Flame, GitBranch, Radio, Signal, Info, Link2, Network } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
 import dynamic from "next/dynamic";
 import { apiGet } from "@/lib/api/http";
 import type { TracerouteOverlay, HeatmapOptions, TrajectoryOptions } from "@/components/map/MapView";
 import type { HeatmapDataType } from "@/components/map/HeatmapLayer";
 import { useTrajectories } from "@/hooks/useTrajectories";
+import { estimateCoverage, getEnvironmentDescription, getExpectedRange, type EnhancedCoverageEstimate } from "@/lib/lora-coverage";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -42,6 +44,42 @@ interface TracerouteResponse {
   success: boolean;
 }
 
+interface CoverageApiResponse {
+  coverage: EnhancedCoverageEstimate;
+  graph: {
+    links: Array<{
+      nodeA: string;
+      nodeB: string;
+      snr?: number;
+      distance?: number;
+      seenCount: number;
+      bidirectional: boolean;
+    }>;
+    nodeConnections: Record<string, string[]>;
+    hubNodes: string[];
+    bridgeNodes: string[];
+    isolatedNodes: string[];
+    overlappingPairs: Array<{ nodeA: string; nodeB: string; sharedNeighbors: string[] }>;
+  };
+  meta: {
+    nodesAnalyzed: number;
+    nodesWithPosition: number;
+    traceroutesAnalyzed: number;
+    messagesAnalyzed: number;
+  };
+}
+
+function useCoverageAnalysis() {
+  return useQuery({
+    queryKey: ["coverage", "analysis"],
+    queryFn: async (): Promise<CoverageApiResponse> => {
+      return apiGet<CoverageApiResponse>("/api/coverage");
+    },
+    refetchInterval: 60000, // Refresh every minute
+    staleTime: 30000,
+  });
+}
+
 function useRecentTraceroutes() {
   return useQuery({
     queryKey: ["traceroutes", "recent", 20],
@@ -63,6 +101,7 @@ function useRecentTraceroutes() {
 export default function MapPage() {
   const { data: nodes = [], isLoading } = useNodes();
   const { data: traceroutes = [] } = useRecentTraceroutes();
+  const { data: coverageData } = useCoverageAnalysis();
   const settings = useSettings();
   const trajectoryState = useTrajectories();
   const [selectedNode, setSelectedNode] = useState<string | null>(null);
@@ -140,6 +179,22 @@ export default function MapPage() {
   // Calculate center point
   const centerLat = nodesWithPosition.reduce((acc, n) => acc + (n.position?.latitude || 0), 0) / (nodesWithPosition.length || 1);
   const centerLon = nodesWithPosition.reduce((acc, n) => acc + (n.position?.longitude || 0), 0) / (nodesWithPosition.length || 1);
+
+  // Use enhanced coverage from API if available, fallback to local calculation
+  const coverage = useMemo(() => {
+    if (coverageData?.coverage) {
+      return coverageData.coverage;
+    }
+    // Fallback to local calculation (no traceroute/message data)
+    return {
+      ...estimateCoverage(nodes || []),
+      connectivity: undefined,
+      linkDistances: undefined,
+    };
+  }, [nodes, coverageData]);
+
+  // Get connectivity data from API
+  const graph = coverageData?.graph;
 
   return (
     <div className="space-y-6">
@@ -273,39 +328,194 @@ export default function MapPage() {
       </div>
 
       {/* Map Stats */}
-      <div className="grid gap-4 md:grid-cols-4">
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
         <StatCard
           title="Nodes on Map"
           value={nodesWithPosition.length}
-          description={`of ${nodes?.length || 0} total nodes`}
+          description={`of ${nodes?.length || 0} total (${coverage.analysis.routerCount} routers)`}
           icon={MapPin}
           color="green"
         />
 
         <StatCard
-          title="Center Point"
-          value={`${centerLat.toFixed(4)}°`}
-          description={`${centerLon.toFixed(4)}° longitude`}
-          icon={Navigation}
+          title="Est. Coverage"
+          value={coverage.totalCoverageKm2 > 0 ? `${coverage.totalCoverageKm2} km²` : "—"}
+          description={coverage.totalCoverageKm2 > 0
+            ? `~${coverage.effectiveRadiusKm}km per node range`
+            : "Need nodes with GPS"}
+          icon={Signal}
           color="blue"
         />
 
-        <StatCard
-          title="Coverage Area"
-          value="Phase 2"
-          description="Geographic spread"
-          icon={Globe}
-          color="yellow"
-        />
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <div>
+              <StatCard
+                title="Environment"
+                value={coverage.environment.replace("-", " ").replace(/\b\w/g, l => l.toUpperCase())}
+                description={`${getExpectedRange(coverage.environment)}`}
+                icon={Globe}
+                color="yellow"
+              />
+            </div>
+          </TooltipTrigger>
+          <TooltipContent side="bottom" className="max-w-xs">
+            <div className="space-y-1 text-xs">
+              <div className="font-semibold">{getEnvironmentDescription(coverage.environment)}</div>
+              <div className="text-muted-foreground">
+                Inferred from: {coverage.analysis.inferenceMethod}
+              </div>
+              <div className="text-muted-foreground">
+                Confidence: {Math.round(coverage.environmentConfidence * 100)}%
+              </div>
+              {coverage.analysis.avgSnr !== null && (
+                <div className="text-muted-foreground">
+                  Avg SNR: {coverage.analysis.avgSnr.toFixed(1)} dB
+                </div>
+              )}
+            </div>
+          </TooltipContent>
+        </Tooltip>
 
         <StatCard
-          title="Active Nodes"
-          value={nodesWithPosition.filter(n => Date.now() - n.lastHeard < 3600000).length}
-          description="Online with GPS"
+          title="Network Span"
+          value={coverage.networkSpanKm > 0 ? `${coverage.networkSpanKm} km` : "—"}
+          description={coverage.networkSpanKm > 0
+            ? `${nodesWithPosition.filter(n => Date.now() - n.lastHeard < 3600000).length} active with GPS`
+            : "Need 2+ nodes"}
           icon={MapIcon}
           color="default"
         />
       </div>
+
+      {/* Connectivity Stats - shown when we have route data */}
+      {"connectivity" in coverage && coverage.connectivity && (
+        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div>
+                <StatCard
+                  title="Confirmed Links"
+                  value={coverage.connectivity.confirmedLinks}
+                  description={`${coverage.connectivity.avgLinksPerNode} avg per node`}
+                  icon={Link2}
+                  color="green"
+                />
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-xs">
+              <div className="space-y-1 text-xs">
+                <div className="font-semibold">Network Links from Route Data</div>
+                <div className="text-muted-foreground">
+                  Links verified via traceroutes and message routing
+                </div>
+                {coverage.linkDistances && coverage.linkDistances.measuredLinks > 0 && (
+                  <>
+                    <div className="text-muted-foreground">
+                      Avg link distance: {coverage.linkDistances.avg} km
+                    </div>
+                    <div className="text-muted-foreground">
+                      Max link: {coverage.linkDistances.max} km
+                    </div>
+                  </>
+                )}
+              </div>
+            </TooltipContent>
+          </Tooltip>
+
+          <StatCard
+            title="Mesh Connectivity"
+            value={`${Math.round(coverage.connectivity.networkConnectivity * 100)}%`}
+            description={coverage.connectivity.networkConnectivity >= 0.8
+              ? "Well connected"
+              : coverage.connectivity.networkConnectivity >= 0.5
+                ? "Partially connected"
+                : "Fragmented"}
+            icon={Network}
+            color={coverage.connectivity.networkConnectivity >= 0.7 ? "green" : "yellow"}
+          />
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div>
+                <StatCard
+                  title="Hub Nodes"
+                  value={coverage.connectivity.hubNodes.length}
+                  description={coverage.connectivity.hubNodes.length > 0
+                    ? "High-connectivity relays"
+                    : "No hubs detected"}
+                  icon={Radio}
+                  color="blue"
+                />
+              </div>
+            </TooltipTrigger>
+            {graph && graph.hubNodes.length > 0 && (
+              <TooltipContent side="bottom" className="max-w-xs">
+                <div className="space-y-1 text-xs">
+                  <div className="font-semibold">Network Hub Nodes</div>
+                  <div className="text-muted-foreground">
+                    Nodes with many connections (good relay points):
+                  </div>
+                  <div className="font-mono text-muted-foreground">
+                    {graph.hubNodes.slice(0, 5).map(id => {
+                      const node = nodes.find(n => n.id === id);
+                      return node?.shortName || id.slice(0, 8);
+                    }).join(", ")}
+                    {graph.hubNodes.length > 5 && ` +${graph.hubNodes.length - 5} more`}
+                  </div>
+                </div>
+              </TooltipContent>
+            )}
+          </Tooltip>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <div>
+                <StatCard
+                  title="Coverage Overlap"
+                  value={`${coverage.connectivity.overlappingCoverage}%`}
+                  description={coverage.connectivity.overlappingCoverage >= 50
+                    ? "Good redundancy"
+                    : "Limited overlap"}
+                  icon={Layers}
+                  color={coverage.connectivity.overlappingCoverage >= 40 ? "green" : "default"}
+                />
+              </div>
+            </TooltipTrigger>
+            <TooltipContent side="bottom" className="max-w-xs">
+              <div className="space-y-1 text-xs">
+                <div className="font-semibold">Coverage Overlap Analysis</div>
+                <div className="text-muted-foreground">
+                  Percentage of node pairs that share common neighbors.
+                  Higher overlap = better mesh redundancy.
+                </div>
+                {graph && graph.bridgeNodes.length > 0 && (
+                  <div className="text-yellow-500">
+                    ⚠ {graph.bridgeNodes.length} bridge node(s) - single points of failure
+                  </div>
+                )}
+              </div>
+            </TooltipContent>
+          </Tooltip>
+        </div>
+      )}
+
+      {/* Coverage Recommendations */}
+      {coverage.recommendations.length > 0 && (
+        <Card className="border-yellow-500/30 bg-yellow-500/5">
+          <CardContent className="py-3">
+            <div className="flex items-start gap-2">
+              <Info className="h-4 w-4 text-yellow-500 mt-0.5 shrink-0" />
+              <div className="text-sm">
+                <span className="font-medium text-yellow-500">Coverage Tips: </span>
+                <span className="text-muted-foreground">
+                  {coverage.recommendations.join(" • ")}
+                </span>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-4 lg:grid-cols-3">
         {/* Interactive Leaflet Map */}

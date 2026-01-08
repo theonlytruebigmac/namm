@@ -63,10 +63,11 @@ export function useDashboardWidgets() {
     setWidgets(updated);
   }, []);
 
-  // Check if a specific widget is enabled
+  // Check if a specific widget type is enabled
   const isWidgetEnabled = useCallback(
-    (widgetId: string): boolean => {
-      const widget = widgets.find((w) => w.id === widgetId);
+    (widgetType: string): boolean => {
+      // Check by type, not by ID
+      const widget = widgets.find((w) => w.type === widgetType);
       return widget?.enabled ?? false;
     },
     [widgets]

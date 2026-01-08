@@ -1,36 +1,57 @@
 /**
- * WebSocket Broadcaster
+ * SSE Broadcaster
  *
- * Broadcasts updates to connected WebSocket clients with throttling and filtering
+ * Broadcasts updates to connected SSE clients with throttling
+ * Replaces WebSocket broadcaster with simpler SSE-based approach
  */
 
 import { getDatabase } from '@/lib/db';
 import { NodeRepository, PositionRepository, MessageRepository } from '@/lib/db/db';
-import type { ConnectionManager } from './connection-manager';
 import type {
-  WSServerMessage,
   NodeUpdate,
   PositionUpdate,
   TelemetryUpdate,
   MessageUpdate,
   MQTTRawPacket,
   SnapshotData,
-  SubscriptionFilter
-} from './protocol';
+} from '@/lib/websocket/protocol';
 import {
   dbNodeToUpdate,
   dbPositionToUpdate,
-  dbTelemetryToUpdate,
   dbMessageToUpdate,
-  matchesFilter
-} from './protocol';
+} from '@/lib/websocket/protocol';
 
-export class Broadcaster {
+// SSE Event types
+export type SSEEventType =
+  | 'connected'
+  | 'snapshot'
+  | 'node_update'
+  | 'position_update'
+  | 'telemetry_update'
+  | 'message'
+  | 'mqtt_raw'
+  | 'ping';
+
+export interface SSEEvent {
+  type: SSEEventType;
+  data: unknown;
+  timestamp: number;
+}
+
+// Client controller for SSE stream
+interface SSEClient {
+  id: string;
+  controller: ReadableStreamDefaultController;
+  connectedAt: number;
+}
+
+export class SSEBroadcaster {
+  private clients = new Map<string, SSEClient>();
   private nodeRepo: NodeRepository;
   private posRepo: PositionRepository;
   private msgRepo: MessageRepository;
 
-  // Throttling
+  // Throttling - batch updates
   private pendingUpdates = {
     nodes: new Map<string, NodeUpdate>(),
     positions: [] as PositionUpdate[],
@@ -41,14 +62,36 @@ export class Broadcaster {
   private broadcastTimer: NodeJS.Timeout | null = null;
   private broadcastIntervalMs = 100; // Broadcast every 100ms
   private mqttPacketId = 0;
+  private pingTimer: NodeJS.Timeout | null = null;
 
-  constructor(private connectionManager: ConnectionManager) {
+  constructor() {
     const db = getDatabase();
     this.nodeRepo = new NodeRepository(db);
     this.posRepo = new PositionRepository(db);
     this.msgRepo = new MessageRepository(db);
 
     this.startBroadcastTimer();
+    this.startPingTimer();
+  }
+
+  /**
+   * Add a new SSE client
+   */
+  addClient(id: string, controller: ReadableStreamDefaultController): void {
+    this.clients.set(id, {
+      id,
+      controller,
+      connectedAt: Date.now()
+    });
+    console.log(`[SSE] Client connected: ${id} (${this.clients.size} total)`);
+  }
+
+  /**
+   * Remove an SSE client
+   */
+  removeClient(id: string): void {
+    this.clients.delete(id);
+    console.log(`[SSE] Client disconnected: ${id} (${this.clients.size} remaining)`);
   }
 
   /**
@@ -97,9 +140,12 @@ export class Broadcaster {
   }
 
   /**
-   * Send initial snapshot to a new connection
+   * Send initial snapshot to a specific client
    */
-  sendSnapshot(connectionId: string): void {
+  sendSnapshot(clientId: string): void {
+    const client = this.clients.get(clientId);
+    if (!client) return;
+
     try {
       // Get recent nodes (active in last hour)
       const nodes = this.nodeRepo.getAll({
@@ -119,25 +165,51 @@ export class Broadcaster {
         timestamp: Date.now()
       };
 
-      const message: WSServerMessage = {
+      this.sendToClient(client, {
         type: 'snapshot',
-        data: snapshot
-      };
-
-      this.connectionManager.send(connectionId, message);
-      console.log(`Sent snapshot to ${connectionId}: ${nodes.length} nodes, ${positions.length} positions`);
-    } catch (error) {
-      console.error('Error sending snapshot:', error);
-      this.connectionManager.send(connectionId, {
-        type: 'error',
-        error: 'Failed to load snapshot',
-        code: 'SNAPSHOT_ERROR'
+        data: snapshot,
+        timestamp: Date.now()
       });
+
+      console.log(`[SSE] Sent snapshot to ${clientId}: ${nodes.length} nodes, ${positions.length} positions`);
+    } catch (error) {
+      console.error('[SSE] Error sending snapshot:', error);
     }
   }
 
   /**
-   * Start broadcast timer
+   * Send event to a specific client
+   */
+  private sendToClient(client: SSEClient, event: SSEEvent): void {
+    try {
+      const data = `data: ${JSON.stringify(event)}\n\n`;
+      client.controller.enqueue(data);
+    } catch (error) {
+      // Client likely disconnected, remove it
+      console.error(`[SSE] Error sending to ${client.id}, removing client`);
+      this.clients.delete(client.id);
+    }
+  }
+
+  /**
+   * Broadcast event to all connected clients
+   */
+  private broadcast(event: SSEEvent): void {
+    const data = `data: ${JSON.stringify(event)}\n\n`;
+
+    for (const [id, client] of this.clients) {
+      try {
+        client.controller.enqueue(data);
+      } catch (error) {
+        // Client likely disconnected, remove it
+        console.error(`[SSE] Error broadcasting to ${id}, removing client`);
+        this.clients.delete(id);
+      }
+    }
+  }
+
+  /**
+   * Start broadcast timer for batching updates
    */
   private startBroadcastTimer(): void {
     this.broadcastTimer = setInterval(() => {
@@ -146,7 +218,21 @@ export class Broadcaster {
   }
 
   /**
-   * Flush pending updates to clients
+   * Start ping timer to keep connections alive
+   */
+  private startPingTimer(): void {
+    // Send ping every 30 seconds
+    this.pingTimer = setInterval(() => {
+      this.broadcast({
+        type: 'ping',
+        data: null,
+        timestamp: Date.now()
+      });
+    }, 30000);
+  }
+
+  /**
+   * Flush pending updates to all clients
    */
   private flushUpdates(): void {
     // Nothing to broadcast
@@ -160,135 +246,57 @@ export class Broadcaster {
       return;
     }
 
+    const now = Date.now();
+
     // Broadcast node updates
     if (this.pendingUpdates.nodes.size > 0) {
       const nodes = Array.from(this.pendingUpdates.nodes.values());
-      this.broadcastFiltered({
+      this.broadcast({
         type: 'node_update',
-        nodes
+        data: { nodes },
+        timestamp: now
       });
       this.pendingUpdates.nodes.clear();
     }
 
     // Broadcast position updates
     if (this.pendingUpdates.positions.length > 0) {
-      this.broadcastFiltered({
+      this.broadcast({
         type: 'position_update',
-        positions: this.pendingUpdates.positions
+        data: { positions: this.pendingUpdates.positions },
+        timestamp: now
       });
       this.pendingUpdates.positions = [];
     }
 
     // Broadcast telemetry updates
     if (this.pendingUpdates.telemetry.length > 0) {
-      this.broadcastFiltered({
+      this.broadcast({
         type: 'telemetry_update',
-        telemetry: this.pendingUpdates.telemetry
+        data: { telemetry: this.pendingUpdates.telemetry },
+        timestamp: now
       });
       this.pendingUpdates.telemetry = [];
     }
 
     // Broadcast messages
     if (this.pendingUpdates.messages.length > 0) {
-      this.broadcastFiltered({
+      this.broadcast({
         type: 'message',
-        messages: this.pendingUpdates.messages
+        data: { messages: this.pendingUpdates.messages },
+        timestamp: now
       });
       this.pendingUpdates.messages = [];
     }
 
     // Broadcast raw MQTT packets for live stream
     if (this.pendingUpdates.mqttRaw.length > 0) {
-      this.broadcastFiltered({
+      this.broadcast({
         type: 'mqtt_raw',
-        packets: this.pendingUpdates.mqttRaw
+        data: { packets: this.pendingUpdates.mqttRaw },
+        timestamp: now
       });
       this.pendingUpdates.mqttRaw = [];
-    }
-  }
-
-  /**
-   * Broadcast with filtering based on client subscriptions
-   */
-  private broadcastFiltered(message: WSServerMessage): void {
-    const connectionIds = this.connectionManager.getConnectionIds();
-
-    for (const id of connectionIds) {
-      const state = this.connectionManager.getState(id);
-      if (!state) continue;
-
-      // Apply filter if client has one
-      if (state.filter) {
-        const filtered = this.filterMessage(message, state.filter);
-        if (filtered) {
-          this.connectionManager.send(id, filtered);
-        }
-      } else {
-        // No filter, send all
-        this.connectionManager.send(id, message);
-      }
-    }
-  }
-
-  /**
-   * Filter message based on subscription filter
-   */
-  private filterMessage(
-    message: WSServerMessage,
-    filter: SubscriptionFilter
-  ): WSServerMessage | null {
-    switch (message.type) {
-      case 'node_update':
-        if (filter.messageTypes && !filter.messageTypes.includes('node')) {
-          return null;
-        }
-        const filteredNodes = message.nodes.filter((node) => {
-          if (filter.nodeIds && !filter.nodeIds.includes(node.id)) {
-            return false;
-          }
-          return true;
-        });
-        return filteredNodes.length > 0
-          ? { type: 'node_update', nodes: filteredNodes }
-          : null;
-
-      case 'position_update':
-        if (filter.messageTypes && !filter.messageTypes.includes('position')) {
-          return null;
-        }
-        const filteredPositions = message.positions.filter((pos) => {
-          if (filter.nodeIds && !filter.nodeIds.includes(pos.nodeId)) {
-            return false;
-          }
-          if (filter.bounds && !matchesFilter(pos.nodeId, pos, filter)) {
-            return false;
-          }
-          return true;
-        });
-        return filteredPositions.length > 0
-          ? { type: 'position_update', positions: filteredPositions }
-          : null;
-
-      case 'message':
-        if (filter.messageTypes && !filter.messageTypes.includes('message')) {
-          return null;
-        }
-        const filteredMessages = message.messages.filter((msg) => {
-          if (filter.nodeIds) {
-            return (
-              filter.nodeIds.includes(msg.fromId) ||
-              filter.nodeIds.includes(msg.toId)
-            );
-          }
-          return true;
-        });
-        return filteredMessages.length > 0
-          ? { type: 'message', messages: filteredMessages }
-          : null;
-
-      default:
-        // Pass through other message types
-        return message;
     }
   }
 
@@ -297,10 +305,12 @@ export class Broadcaster {
    */
   getStats() {
     return {
+      clients: this.clients.size,
       pendingNodes: this.pendingUpdates.nodes.size,
       pendingPositions: this.pendingUpdates.positions.length,
       pendingTelemetry: this.pendingUpdates.telemetry.length,
       pendingMessages: this.pendingUpdates.messages.length,
+      pendingMqttRaw: this.pendingUpdates.mqttRaw.length,
       broadcastIntervalMs: this.broadcastIntervalMs
     };
   }
@@ -313,10 +323,24 @@ export class Broadcaster {
       clearInterval(this.broadcastTimer);
       this.broadcastTimer = null;
     }
+    if (this.pingTimer) {
+      clearInterval(this.pingTimer);
+      this.pingTimer = null;
+    }
 
     // Flush remaining updates
     this.flushUpdates();
 
-    console.log('Broadcaster shutdown complete');
+    // Close all client connections
+    for (const [id, client] of this.clients) {
+      try {
+        client.controller.close();
+      } catch {
+        // Ignore errors during shutdown
+      }
+      this.clients.delete(id);
+    }
+
+    console.log('[SSE] Broadcaster shutdown complete');
   }
 }

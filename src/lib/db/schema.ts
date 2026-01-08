@@ -14,6 +14,8 @@ export function initializeSchema(db: Database.Database): void {
 
   if (version === SCHEMA_VERSION) {
     console.log(`Database schema already at version ${SCHEMA_VERSION}`);
+    // Run repairs for any missing columns (in case schema was incomplete)
+    repairSchema(db);
     return;
   }
 
@@ -28,6 +30,22 @@ export function initializeSchema(db: Database.Database): void {
     // Future migrations would go here
     migrate(db, version, SCHEMA_VERSION);
     console.log('Migration complete');
+  }
+}
+
+/**
+ * Repair schema by adding any missing columns
+ * This handles cases where the initial CREATE TABLE was incomplete
+ */
+function repairSchema(db: Database.Database): void {
+  // Check if read_at column exists in messages table
+  const columns = db.prepare("PRAGMA table_info(messages)").all() as { name: string }[];
+  const hasReadAt = columns.some(col => col.name === 'read_at');
+
+  if (!hasReadAt) {
+    console.log('Repairing schema: Adding missing read_at column to messages table...');
+    db.exec('ALTER TABLE messages ADD COLUMN read_at INTEGER DEFAULT NULL');
+    db.exec('CREATE INDEX IF NOT EXISTS idx_messages_read_at ON messages(read_at)');
   }
 }
 
@@ -121,6 +139,7 @@ function createTables(db: Database.Database): void {
       rssi INTEGER,
       hops_away INTEGER,
       reply_to INTEGER,
+      read_at INTEGER DEFAULT NULL,
       FOREIGN KEY (from_id) REFERENCES nodes(id) ON DELETE CASCADE,
       FOREIGN KEY (reply_to) REFERENCES messages(id) ON DELETE SET NULL
     )
@@ -262,6 +281,7 @@ function createIndexes(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_messages_to ON messages(to_id, timestamp DESC);
     CREATE INDEX IF NOT EXISTS idx_messages_channel ON messages(channel, timestamp DESC);
     CREATE INDEX IF NOT EXISTS idx_messages_reply_to ON messages(reply_to);
+    CREATE INDEX IF NOT EXISTS idx_messages_read_at ON messages(read_at);
   `);
 
   // Reaction indexes

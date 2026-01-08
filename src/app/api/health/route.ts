@@ -7,7 +7,7 @@
 import { NextResponse } from 'next/server';
 import { getDatabase } from '@/lib/db';
 import { getMQTTWorker } from '@/lib/worker/mqtt-worker';
-import { getWebSocketStats } from '@/lib/websocket';
+import { getSSEStats } from '@/lib/sse';
 import '@/lib/worker/auto-start'; // Trigger MQTT auto-start
 
 export async function GET() {
@@ -57,19 +57,19 @@ export async function GET() {
     // Don't mark as unhealthy if worker isn't started yet
   }
 
-  // Check WebSocket
+  // Check SSE (Server-Sent Events)
   try {
-    const wsStats = getWebSocketStats();
-    checks.checks.websocket = {
-      status: wsStats.initialized ? 'healthy' : 'not_initialized',
-      message: wsStats.initialized
-        ? `${wsStats.connections} active connections`
-        : 'WebSocket not initialized'
+    const sseStats = getSSEStats();
+    checks.checks.sse = {
+      status: sseStats.initialized ? 'healthy' : 'not_initialized',
+      message: sseStats.initialized
+        ? `${sseStats.clients} active connections`
+        : 'SSE broadcaster not initialized'
     };
   } catch (error) {
-    checks.checks.websocket = {
+    checks.checks.sse = {
       status: 'unknown',
-      message: 'WebSocket status unavailable'
+      message: 'SSE status unavailable'
     };
   }
 
