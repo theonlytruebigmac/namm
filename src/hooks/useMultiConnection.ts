@@ -235,6 +235,20 @@ export function useMultiMQTT() {
         }
       }
 
+      // FIRST: Fetch current server-side MQTT connections to update our tracking
+      // This prevents 409 errors by knowing what's already connected on the server
+      try {
+        const serverResponse = await fetch("/api/mqtt/connections");
+        if (serverResponse.ok) {
+          const data = await serverResponse.json();
+          for (const conn of data.connections || []) {
+            serverConnectionsRef.current.add(conn.id);
+          }
+        }
+      } catch {
+        // Server may not be available, continue anyway
+      }
+
       // Add or update connections, and auto-connect enabled ones
       for (const config of mqttConfigs) {
         const isWebSocket = config.brokerUrl.startsWith("ws://") || config.brokerUrl.startsWith("wss://");
@@ -253,7 +267,7 @@ export function useMultiMQTT() {
         if (config.enabled && config.autoConnect) {
           if (isNativeMQTT) {
             // Native MQTT needs server-side connection
-            // Skip if already tracked as a server connection or currently connecting
+            // Skip if already connected on server or currently connecting
             if (serverConnectionsRef.current.has(config.id) || connectingRef.current.has(config.id)) {
               continue;
             }
