@@ -124,6 +124,7 @@ export function useMultiMQTT() {
   const queryClient = useQueryClient();
   const managerRef = useRef<ReturnType<typeof getMultiMQTTManager> | null>(null);
   const serverConnectionsRef = useRef<Set<string>>(new Set());
+  const connectingRef = useRef<Set<string>>(new Set()); // Track in-flight connection attempts
   const [connectionStates, setConnectionStates] = useState<Map<string, ConnectionState>>(
     new Map()
   );
@@ -248,10 +249,16 @@ export function useMultiMQTT() {
           }
         }
 
-        // Auto-connect enabled connections
+        // Auto-connect enabled connections (only if not already connected)
         if (config.enabled && config.autoConnect) {
           if (isNativeMQTT) {
             // Native MQTT needs server-side connection
+            // Skip if already tracked as a server connection or currently connecting
+            if (serverConnectionsRef.current.has(config.id) || connectingRef.current.has(config.id)) {
+              continue;
+            }
+            // Mark as connecting to prevent duplicate requests
+            connectingRef.current.add(config.id);
             try {
               const response = await fetch("/api/mqtt/connections", {
                 method: "POST",
@@ -268,9 +275,14 @@ export function useMultiMQTT() {
               if (response.ok) {
                 serverConnectionsRef.current.add(config.id);
                 console.log(`[MQTT] Auto-connected ${config.name} via server`);
+              } else if (response.status === 409) {
+                // Connection already exists on server, just track it
+                serverConnectionsRef.current.add(config.id);
               }
             } catch (error) {
               console.error(`[MQTT] Failed to auto-connect ${config.name}:`, error);
+            } finally {
+              connectingRef.current.delete(config.id);
             }
           } else if (isWebSocket) {
             // WebSocket connections handled by browser manager
