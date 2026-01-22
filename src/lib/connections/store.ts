@@ -2,7 +2,8 @@
  * Connection Store
  *
  * Manages storage and retrieval of multiple connection configurations.
- * Uses localStorage for persistence.
+ * Uses server-side SQLite database as the source of truth.
+ * Falls back to localStorage only during initial load before server sync.
  */
 
 import type {
@@ -20,25 +21,90 @@ import type {
 
 const CONNECTIONS_KEY = "namm-connections";
 
+// In-memory cache of connections (source of truth after server sync)
+let connectionsCache: ConnectionConfig[] | null = null;
+let isSyncing = false;
+
+// ============================================================================
+// Server Sync Functions
+// ============================================================================
+
+/**
+ * Fetch connections from server API
+ * This is the source of truth for connections
+ */
+export async function fetchConnectionsFromServer(): Promise<ConnectionConfig[]> {
+  try {
+    const response = await fetch("/api/connections");
+    if (response.ok) {
+      const data = await response.json();
+      const loaded: ConnectionConfig[] = data.connections || [];
+      connectionsCache = loaded;
+      console.log(`[Store] Loaded ${loaded.length} connections from server`);
+
+      // Dispatch event to notify components
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(
+          new CustomEvent("connections-changed", { detail: loaded })
+        );
+      }
+
+      return loaded;
+    }
+  } catch (error) {
+    console.error("[Store] Failed to fetch connections from server:", error);
+  }
+
+  // Fallback to empty array (server is unavailable)
+  return [];
+}
+
+/**
+ * Sync connections to server API
+ */
+async function syncConnectionsToServer(connections: ConnectionConfig[]): Promise<boolean> {
+  if (isSyncing) return false;
+  isSyncing = true;
+
+  try {
+    const response = await fetch("/api/connections", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ connections }),
+    });
+
+    if (response.ok) {
+      console.log(`[Store] Synced ${connections.length} connections to server`);
+      return true;
+    } else {
+      console.error("[Store] Server sync failed:", await response.text());
+      return false;
+    }
+  } catch (error) {
+    console.error("[Store] Failed to sync connections to server:", error);
+    return false;
+  } finally {
+    isSyncing = false;
+  }
+}
+
 // ============================================================================
 // Storage Functions
 // ============================================================================
 
 /**
  * Get all stored connections
+ * Returns cached connections if available, otherwise empty array
+ * Call fetchConnectionsFromServer() first to populate the cache
  */
 export function getConnections(): ConnectionConfig[] {
-  if (typeof window === "undefined") return [];
-
-  try {
-    const stored = localStorage.getItem(CONNECTIONS_KEY);
-    if (stored) {
-      return JSON.parse(stored);
-    }
-  } catch (error) {
-    console.error("Failed to load connections:", error);
+  // Return cache if available
+  if (connectionsCache !== null) {
+    return connectionsCache;
   }
 
+  // Cache not populated yet - return empty array
+  // The useConnections hook will call fetchConnectionsFromServer() on mount
   return [];
 }
 
@@ -59,19 +125,21 @@ export function getConnection(id: string): ConnectionConfig | undefined {
 }
 
 /**
- * Save all connections
+ * Save all connections (syncs to server)
  */
 export function saveConnections(connections: ConnectionConfig[]): void {
-  if (typeof window === "undefined") return;
+  // Update cache immediately
+  connectionsCache = connections;
 
-  try {
-    localStorage.setItem(CONNECTIONS_KEY, JSON.stringify(connections));
+  // Dispatch event for components to update
+  if (typeof window !== "undefined") {
     window.dispatchEvent(
       new CustomEvent("connections-changed", { detail: connections })
     );
-  } catch (error) {
-    console.error("Failed to save connections:", error);
   }
+
+  // Sync to server (fire and forget, but log errors)
+  syncConnectionsToServer(connections);
 }
 
 /**
@@ -353,13 +421,13 @@ export function migrateFromLegacySettings(): boolean {
           useTLS: settings.mqttUseTLS || false,
           subscriptions: settings.mqttTopic
             ? [
-                {
-                  id: "sub_migrated",
-                  topic: settings.mqttTopic,
-                  description: "Migrated from legacy settings",
-                  enabled: true,
-                },
-              ]
+              {
+                id: "sub_migrated",
+                topic: settings.mqttTopic,
+                description: "Migrated from legacy settings",
+                enabled: true,
+              },
+            ]
             : [],
         })
       );

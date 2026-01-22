@@ -30,6 +30,7 @@ import {
   addMQTTSubscription,
   removeMQTTSubscription,
   migrateFromLegacySettings,
+  fetchConnectionsFromServer,
 } from "@/lib/connections/store";
 import {
   getMultiMQTTManager,
@@ -46,15 +47,18 @@ export function useConnections() {
   const [connections, setConnections] = useState<ConnectionConfig[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Load connections on mount
+  // Load connections from server on mount
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    // Migrate legacy settings on first load
+    // Migrate legacy settings first (one-time operation)
     migrateFromLegacySettings();
 
-    setConnections(getConnections());
-    setIsLoaded(true);
+    // Fetch connections from server (source of truth)
+    fetchConnectionsFromServer().then((serverConnections) => {
+      setConnections(serverConnections);
+      setIsLoaded(true);
+    });
 
     // Listen for changes
     const handleChange = (e: CustomEvent<ConnectionConfig[]>) => {
@@ -209,11 +213,11 @@ export function useMultiMQTT() {
     };
   }, [queryClient]);
 
-  // Listen for connection config changes
+  // Listen for connection config changes and auto-connect enabled MQTT connections
   useEffect(() => {
     if (!managerRef.current) return;
 
-    const handleConnectionsChanged = (e: CustomEvent<ConnectionConfig[]>) => {
+    const handleConnectionsChanged = async (e: CustomEvent<ConnectionConfig[]>) => {
       const manager = managerRef.current!;
       const mqttConfigs = e.detail.filter(
         (c) => c.type === "mqtt"
@@ -230,25 +234,64 @@ export function useMultiMQTT() {
         }
       }
 
-      // Add or update connections
+      // Add or update connections, and auto-connect enabled ones
       for (const config of mqttConfigs) {
+        const isWebSocket = config.brokerUrl.startsWith("ws://") || config.brokerUrl.startsWith("wss://");
+        const isNativeMQTT = config.brokerUrl.startsWith("mqtt://") || config.brokerUrl.startsWith("mqtts://");
+
         if (currentIds.has(config.id)) {
           manager.updateConnection(config.id, config);
         } else {
-          manager.addConnection(config);
+          // Add new connection (WebSocket ones go to browser manager)
+          if (isWebSocket) {
+            manager.addConnection(config);
+          }
+        }
+
+        // Auto-connect enabled connections
+        if (config.enabled && config.autoConnect) {
+          if (isNativeMQTT) {
+            // Native MQTT needs server-side connection
+            try {
+              const response = await fetch("/api/mqtt/connections", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  id: config.id,
+                  name: config.name,
+                  broker: config.brokerUrl,
+                  username: config.username,
+                  password: config.password,
+                  topics: config.subscriptions.filter(s => s.enabled).map(s => s.topic),
+                }),
+              });
+              if (response.ok) {
+                serverConnectionsRef.current.add(config.id);
+                console.log(`[MQTT] Auto-connected ${config.name} via server`);
+              }
+            } catch (error) {
+              console.error(`[MQTT] Failed to auto-connect ${config.name}:`, error);
+            }
+          } else if (isWebSocket) {
+            // WebSocket connections handled by browser manager
+            const state = manager.getConnectionState(config.id);
+            if (state?.status !== "connected" && state?.status !== "connecting") {
+              manager.connect(config.id);
+              console.log(`[MQTT] Auto-connecting ${config.name} via WebSocket`);
+            }
+          }
         }
       }
     };
 
-    window.addEventListener(
-      "connections-changed",
-      handleConnectionsChanged as EventListener
-    );
+    // Wrapper to handle async event handler (EventListener doesn't support Promise)
+    const eventHandler = (e: Event) => {
+      handleConnectionsChanged(e as CustomEvent<ConnectionConfig[]>);
+    };
+
+    window.addEventListener("connections-changed", eventHandler);
     return () => {
-      window.removeEventListener(
-        "connections-changed",
-        handleConnectionsChanged as EventListener
-      );
+      window.removeEventListener("connections-changed", eventHandler);
     };
   }, []);
 
